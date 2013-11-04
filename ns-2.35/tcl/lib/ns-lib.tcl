@@ -194,6 +194,7 @@ source ns-namsupp.tcl
 source ../mobility/dsdv.tcl
 source ../mobility/dsr.tcl
 source ../mobility/com.tcl
+source ../mobility/noah.tcl
 
 source ../plm/plm.tcl
 source ../plm/plm-ns.tcl
@@ -669,6 +670,9 @@ Simulator instproc create-wireless-node args {
 		    ManualRtg {
 			    set ragent [$self create-manual-rtg-agent $node]
 		    }
+		    NOAH {
+			    set ragent [$self create-noah-agent $node]
+		    }
 		    default {
 			    eval $node addr $args
 			    puts "Wrong node routing agent!"
@@ -881,6 +885,25 @@ Simulator instproc create-mdart-agent { node } {
         $self at 0.0 "$ragent start"     ;# start BEACON/HELLO Messages
         $node set ragent_ $ragent
         return $ragent
+}
+
+Simulator instproc create-noah-agent { node } {
+    # Create a noah routing agent for this node
+    set ragent [new Agent/NOAH]
+
+    ## setup address (supports hier-addr) for noah agent
+    ## and mobilenode
+    set addr [$node node-addr]
+
+    $ragent addr $addr
+    $ragent node $node
+
+    if [Simulator set mobile_ip_] {
+        $ragent port-dmux [$node demux]
+    }
+    $node addr $addr
+    $node set ragent_ $ragent
+    return $ragent
 }
 
 Simulator instproc use-newtrace {} {
