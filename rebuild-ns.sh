@@ -1,3 +1,6 @@
+#!/bin/sh
+
+# set -x
 
 # Package VERSIONs. Change these when releasing new packages
 TCLVER=8.5.10
@@ -5,6 +8,35 @@ TKVER=8.5.10
 OTCLVER=1.14
 TCLCLVER=1.20
 NSVER=2.35
+TCLDEBUGVER=2.0
+
+# Get current path
+CUR_PATH=`pwd`
+
+echo "============================================================"
+echo "* Build tcl-debug-$TCLDEBUGVER"
+echo "============================================================"
+
+cd ./tcl-debug-$TCLDEBUGVER
+if [ -f Makefile ] ; then 
+	make distclean
+fi
+
+# TODO test_cygwin
+# ./configure --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "Ns configuration failed! Exiting ...";
+./configure --with-tcl="${CUR_PATH}/lib" --with-tclinclude="$CUR_PATH/tcl$TCLVER/generic" --prefix=${CUR_PATH} --enable-gcc || die "Ns configuration failed! Exiting ..."
+
+if make
+then
+	echo "tcl-debug-$TCLDEBUGVER make succeeded."
+	make install || die "tcl$TCLVER installation failed."
+	echo "tcl-debug-$TCLDEBUGVER installation succeeded."
+else
+	echo "tcl-debug-$TCLDEBUGVER make failed! Exiting ..."
+	exit
+fi
+
+cd ..
 
 echo "============================================================"
 echo "* Build ns-$NSVER"
@@ -18,7 +50,7 @@ fi
 # if  [ "${test_cygwin}" = "true" ]; then
 #         ./configure --x-libraries=/usr/X11R6/lib --x-includes=/usr/X11R6/include --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "Ns configuration failed! Exiting ...";
 # else
-        ./configure --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "Ns configuration failed! Exiting ...";
+        ./configure --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER  --with-tcldebug || die "Ns configuration failed! Exiting ...";
 # fi
 
 if make
