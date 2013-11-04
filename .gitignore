@@ -25,6 +25,7 @@ cweb/cweave.c
 bin/
 include/
 lib/
+man/
 
 dei80211mr-1.1.4/src/InitTcl.cc
 dei80211mr-1.1.4/src/adt/.dirstamp
