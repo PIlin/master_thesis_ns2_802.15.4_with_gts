@@ -1,0 +1,19 @@
+--- tcl-debug-2.0_orig/configure	2000-08-21 21:34:29.000000000 +0200
++++ tcl-debug-2.0/configure	2010-01-18 16:32:10.000000000 +0100
+@@ -1326,13 +1326,13 @@ if test x"${ac_cv_c_tclh}" = x ; then
+   for i in \
+ 		${srcdir}/../tcl \
+ 		`ls -dr ${srcdir}/../tcl[9].[0-9].[0-9] ${srcdir}/../tcl[9].[0-9] 2>/dev/null` \
+-		`ls -dr ${srcdir}/../tcl[8].[2-9].[0-9] ${srcdir}/../tcl[8].[2-9] 2>/dev/null` \
++		`ls -dr ${srcdir}/../tcl[8].[2-9].[0-9][0-9] ${srcdir}/../tcl[8].[2-9] 2>/dev/null` \
+ 		${srcdir}/../../tcl \
+ 		`ls -dr ${srcdir}/../../tcl[9].[0-9].[0-9] ${srcdir}/../../tcl[9].[0-9] 2>/dev/null` \
+-		`ls -dr ${srcdir}/../../tcl[8].[2-9].[0-9] ${srcdir}/../../tcl[8].[2-9] 2>/dev/null` \
++		`ls -dr ${srcdir}/../../tcl[8].[2-9].[0-9][0-9] ${srcdir}/../../tcl[8].[2-9] 2>/dev/null` \
+ 		${srcdir}/../../../tcl \
+ 		`ls -dr ${srcdir}/../../../tcl[9].[0-9].[0-9] ${srcdir}/../../../tcl[9].[0-9] 2>/dev/null ` \
+-		`ls -dr ${srcdir}/../../../tcl[8].[2-9].[0-9] ${srcdir}/../../../tcl[8].[2-9] 2>/dev/null ` ; do
++		`ls -dr ${srcdir}/../../../tcl[8].[2-9].[0-9][0-9] ${srcdir}/../../../tcl[8].[2-9] 2>/dev/null ` ; do
+     if test -f $i/generic/tclInt.h ; then
+       ac_cv_c_tclh=`(cd $i/generic; pwd)`
+       break

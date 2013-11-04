@@ -1,0 +1,149 @@
+--------------------
+Introduction
+--------------------
+
+This is the README file for a debugger for Tcl and Tk applications.
+This is a release for Tcl 8.3.  (It has not been tested with Tcl 8.2
+and it does not work with 8.0 or earlier (for Tcl-7.5, 7.6, and 8.0
+get tcl-debug-1.9).  This is not guaranteed to work with alpha or beta
+releases of Tcl.  This is compatible with any Tcl extension that does
+not make changes to Tcl itself.
+
+This is a debugger in the traditional style.  It is patterned after
+gdb and dbx.  For example, you can give commands such as "s" to step
+into a procedure, "c" to continue, and "b" to set a breakpoint.
+
+-------------------
+Starting the Debugger
+-------------------
+
+There are several ways of starting the debugger.
+
+1) Dynamically
+
+   If you already have an existing session, use the package command:
+
+   % package require Dbg
+
+   (If this isn't an interactive session, send the command from another
+   interpreter!)
+
+2) Statically in Expect or Expectk
+
+   Get a tool that already has it installed, such as Expect.  Expect
+   is just tclsh plus the Expect commands plus the debugger commands.
+   (Just ignore the Expect commands.)  Why would you want to do this?
+   Several reasons:
+
+      2.1) You don't have dynamic loading enabled
+      2.2) You need to debug starting before the first line in your
+           script.
+
+   If you want to debug Tk programs, use Expectk (this comes with
+   Expect) which is just wish + Expect + Debugger.
+
+   You can ftp Expect from ftp.cme.nist.gov as pub/expect/expect.tar.Z.
+
+3) Statically in another Tcl application
+
+    It is very easy to drop the debugger into existing Tcl and Tk
+    applications - just add a call to Tcldbg_Init(interp) and you get a
+    "debug" command that starts the debugger.  The INSTALL file mentions
+    other possible ways of configuring the debugger.
+
+--------------------
+Documentation
+--------------------
+
+This distribution includes the paper "A Debugger for Tcl
+Applications", Proceedings of the Tcl/Tk '93 Workshop, June 10-11,
+Berkeley, CA.  This paper includes a brief tutorial for users, and a
+description of the C interface for Tcl application authors.
+
+A few things have changed since the paper was written but not much.
+See the CHANGES file for more info.
+
+A tutorial and complete description of the debugger can be found in
+Exploring Expect, ISBN 1-56592-090-2, published by O'Reilly.
+
+If you have access to World Wide Web, here are some related URLs:
+
+one-paragraph description (from O'Reilly catalog):
+	http://www.ora.com/catalog/expect/noframes.html
+one-page description (from back cover of book):
+	http://www.ora.com/catalog/expect/desc.html
+front cover - picture and description:
+	http://www.ora.com/catalog/expect/cover.html
+
+To order:
+	Via email: order@ora.com
+	Via the web: http://www.ora.com/order/order_form.html
+	Via phone (Weekdays 6am-6pm PST): 800-889-9938 or 707-829-0515
+
+Publisher's address: O'Reilly & Associates, Inc.
+	             103A Morris Street
+	             Sebastopol, CA  95472
+
+--------------------
+How to Get the Documentation or the Latest Version of the Debugger
+--------------------
+
+The debugger may be ftp'd as pub/expect/tcl-debug.tar.Z from
+ftp.cme.nist.gov.  Request email delivery by mailing to
+"library@cme.nist.gov".  The contents of the message should be (no
+subject line) "send pub/expect/tcl-debug.tar.Z".
+
+Once you have retrieved the system, read the INSTALL file.  The paper
+mentioned above can be retrieved separately as:
+
+  pub/expect/tcl-debug.ps.Z          (Tcl/Tk '93 - Tcl/Tk Debugger)
+
+The overhead transparencies I used at the Tcl/Tk conference is also
+available in the same way as the paper itself.  The transparencies are
+sketchy and not meant for personal education - however if you are
+familiar with the debugger and just want to give a short talk on it to
+your colleagues, you may find the transparencies useful.  It is
+intended for a 15-20 minute talk.
+
+  pub/expect/tcl-debug-talk.ps.Z     (Tcl/Tk '93 - Tcl/Tk Debugger)
+
+All of the documents are compressed PostScript files and should be
+uncompressed and sent to a PostScript printer.  The documents are
+intended for printing at 8.5"x11" and may fail on some ISO A4
+printers.  According to Hans Mayer <Hans.Mayer@gmd.de>, you can make
+it A4-able by searching for "FMVERSION" and changing the next line
+from:
+
+	1 1 0 0 612 792 0 1 13 FMDOCUMENT
+to:
+	1 1 0 0 594 841 0 1 13 FMDOCUMENT
+
+
+--------------------
+Installing the Debugger
+--------------------
+
+Read the INSTALL file.
+
+--------------------
+Support
+--------------------
+
+Although I can't promise anything in the way of support, I'd be
+interested to hear about your experiences using it (either good or
+bad).  I'm also interested in hearing bug reports (please include
+version #) and suggestions for improvement even though I can't promise
+to implement them immediately.
+
+Awards, love letters, and bug reports may be sent to:
+
+Don Libes
+National Institute of Standards and Technology
+Bldg 220, Rm A-127
+Gaithersburg, MD  20899
+(301) 975-3535
+libes@nist.gov
+
+Design and implementation of this program was paid for by U.S. tax
+dollars.  Therefore it is public domain.  However, the author and NIST
+would appreciate credit if this program or parts of it are used.

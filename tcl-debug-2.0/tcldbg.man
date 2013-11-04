@@ -1,0 +1,460 @@
+.TH TCLDBG N "5 November 1996" Tcldbg "Tcl Interactive Debugger"
+
+.IX "Expect" "Debugger" "TCL" "TK" "exp_debug" "debug"
+.SH NAME
+tcl debugger \- interactive debugger for Tcl and Expect
+.SH INTRODUCTION
+The Tcl debugger allows debugging of Tcl scripts in a manner very similar
+to classical debuggers such as dbx and gdb.  The Tcl debugger can be used
+with Tcl extensions such as Expect and Tk.  The debugger can:
+.TP 5
+o
+Perform a step-by-step execution of a script and its procedures.
+.TP
+o
+Create user-defined breakpoints. Any number of breakpoints can be set,
+and they can be triggered by the value of a variable, by the value of
+an expression, or by pattern matching on a command or its arguments.
+.BE
+You can customize the action taken when a breakpoint is triggered. The
+default action is to stop the script's execution, but any block of 
+TCL statements can be specified.
+.TP
+o
+Examine the current values of variables and expressions. You can also
+step up or down through nested procedures to examine the values of variables
+as known by those procedures.
+.TP
+o
+Display the current state of the program stack.
+.PP
+This man page describes a large percentage of the debugger but does
+not describe all of it.  See the Expect book for further discussion of
+the debugger including a tutorial.
+.SH USAGE
+.PP
+The debugger may be invoked in two ways: from the UNIX command line or
+by a Tcl command.  Not all extensions support both of these.  Since
+the Expect extensions supports both, this man page demonstrates the
+debugger using Expect.  For example, to start the debugger from the
+command line, enter:
+
+      % \fBexpect \-D 1 \-i \fR[ \fIcmdfile\fR ] [ \fIargs\fR ]
+
+where
+.I cmdfile
+is an optional script file and
+.I args 
+are optional arguments for the script.
+
+To turn on the debugging flag when you are already in 
+.B Tcl's
+interactive mode, enter the following command at the
+.B Expect
+prompt:
+
+      expect1.1> \fBexp_debug 1\fR
+
+This command can also be given as \fBdebug\fR.
+
+Once the debugger flag has been turned on, the debugger is activated
+at the next error or signal, or at the next \fBexp_debug\fR (or \fBdebug\fR)
+command. 
+
+To turn on the debugger flag and enter the debugger immediately,
+enter the following command:
+
+      \fBexp_debug \-now 1\fR
+
+When you are in the \fBTcl\fR
+debugger, the prompt changes to \fBdbg\fI#.#\fB\>\fR, where the first
+number is the number of pending calls to Tcl_Eval and the second is
+the history number (this is the same format as the default \fBExpect\fR
+prompt). If you give an incomplete command, the prompt changes to 
+\fBdbg+>\fR to indicate additional input is needed.
+
+To leave the debugger and return to the normal \fBTcl\fR
+prompt, give the \fBreturn\fR command. 
+
+.TP 6
+\fBNOTE:\fR
+Unlike \fBExpect's\fR prompts, the debugger prompts cannot
+be redefined from within \fBExpect\fR. To change them, you must edit the
+\fBDbg.c\fR source file and recompile.
+
+.SH COMMANDS
+.PP
+When the interactive debugger is running, you can give any TCL or
+extension commands. In addition, the following debugger commands are
+available:
+
+.TP 6
+\fBb\fR
+Sets, clears, or shows \fBb\fRreakpoints. See \fBBREAKPOINTS\fR below.
+.TP
+\fBc\fR
+\fBC\fRontinue program execution until the end of the script, until the 
+script hits a signal, or until a breakpoint is triggered, whichever
+comes first.
+.TP
+\fBd\fR
+Move the scope of the debugger \fBd\fRown one or more levels so as 
+to view the state of variables at that level. Use \fBd\fR \fIn\fR to
+move \fIn\fR levels down. Use \fBd #\fIn\fR to move to absolute scope
+number \fIn\fR.
+
+Changing the scope only changes the view you have of the variables that
+are defined at that point. If you continue program execution, the scope
+is automatically reset to whatever is appropriate for the next command.
+.TP
+\fBh\fR
+Display a \fBh\fRelp screen listing the debugger commands.
+.TP
+\fBn\fR
+Execute the \fBn\fRext pending command and display the next command to be
+executed. If the next command is a complex expression, such as: 
+
+     \fBset a [expr 1+[expr 2+[expr 3+$b]]\fR
+
+\fBn\fR evaluates each sub-expression at a time; \fBn\fR works
+outward, using \fBTCL's\fR usual rules of precedence and evaluation.
+
+To step through more than one command, follow \fBn\fR with the number of
+expressions to evaluate, such as \fBn 3\fR.
+.TP
+\fBN\fR
+Execute the \fBN\fRext pending command, and if it is a complex expression,
+evaluate all parts. Thus, if the next command is:
+
+     \fBset a [expr 1+[expr 2+[expr 3+$b]]\fR
+
+\fBN\fR evaluates all parts and assigns the proper value to \fB$a\fR.
+
+To step through more than one command, follow \fBN\fR with the number of
+expressions to evaluate, such as \fBN 3\fR.
+.TP
+\fBr\fR
+Complete execution of the current procedure and \fBr\fReturn to the 
+debugger. If no procedure has been called, \fBTcl\fR displays 
+\fBnowhere to return to\fR and redisplays the debugger prompt.
+.TP
+\fBs\fR
+If the next pending command is a procedure, \fBs\fRtep into the next procedure
+and stop before executing the procedure's first command. If the next
+command is not a procedure, \fBs\fR is identical to the \fBn\fR command.
+
+To step through more than one command, follow \fBs\fR with the number of
+expressions to evaluate, such as \fBs 3\fR.
+.TP
+\fBu\fR
+Move the scope of the debugger \fBu\fRp one or more levels so as
+to view the state of variables at that level. Use \fBu\fR \fIn\fR to
+move \fIn\fR levels up. Use \fBu #\fIn\fR to move to absolute scope
+number \fIn\fR.
+
+Changing the scope only changes the view you have of the variables that
+are defined at that point. If you continue program execution, the scope
+is automatically reset to whatever is appropriate for the next command.
+.TP
+\fBw\fR
+Show \fBw\fRhere the current scope of the program is. 0 is the top-level
+scope and always shows the command used to invoke the current program.
+The last line of the display shows the current value of the Tcl_Eval stack
+and the next command to be executed, with all parameters replaced with
+their current literal values.
+
+The \fBw\fR command also controls the \fBw\fRindow display. The 
+
+     \fBw \-w\fI n\fR 
+
+command sets the width of the display to \fIn\fR
+characters. If a line is longer than this width, the debugger shows 
+an ellipses (...) to represent the additional characters. 
+The default width is 75. Use 
+
+     \fBw \-w\fR 
+
+to display the current width. 
+
+The \fBw \-c\fR command sets the compression mode, which displays
+all control characters using their escape sequences (such as "\\n").
+This is particularly useful when procedures and blocks of statements
+are spread over several lines and you would prefer to see the entire
+definition on one line.
+
+To turn off the compression mode (the default), use 
+
+     \fBw \-c 0\fR
+
+To turn on the compression mode, use 
+
+     \fBw \-c 1\fR
+
+To display the current setting, use 
+
+     \fBw \-c\fR
+
+.PP 
+To repeat the last debugger command given, enter a blank line.
+
+.SS BREAKPOINTS
+.PP
+The \fBb\fR command can be used to set, clear, and display breakpoints
+that are used when executing a script (breakpoints are not available for
+commands entered at the debugger prompt).
+Breakpoints can be triggered either when a given expression becomes true
+when evaluated, or when a specified pattern is found in the next command
+to be executed. 
+
+An action can be defined along with a breakpoint, so that when the 
+breakpoint is triggered, the associated action is performed before the 
+debugger prompt reappears. An action can be any set of TCL or extension
+commands. Debugger commands can also be included but commands
+that that control the flow of program execution (\fBc\fR, \fBn\fR,
+\fBN\fR, \fBr\fR, \fBs\fR) are queued until the 
+breakpoint action is completed.
+
+If no action was specified when the breakpoint was set, 
+the debugger prints the number and definition of the breakpoint that was
+triggered before redisplaying the the debugger prompt.
+
+Multiple breakpoints can be triggered at once. If so, all of the 
+actions associated with those breakpoints are done.
+
+The following breakpoint commands exist:
+.TP 10
+\fBb\fR
+Display all currently defined breakpoints.
+.TP
+\fBb if {\fIexpr\fB} then {\fIcommands\fB}
+Set a breakpoint based on the value of the given \fIexpr\fR. 
+If \fIexpr\fR is true, the \fIcommands\fR are executed and the debugger
+prompt is redisplayed. If no \fIcommands\fR are specified, the debugger
+prints the breakpoint number and definition before displaying the prompt.
+.TP
+\fBb \-g \fIglob-pattern\fB if {\fIexpr\fB} then {\fIcommands\fB}
+Set a breakpoint based on whether the given glob-style pattern can be 
+matched with the next command (and its arguments) to be executed. 
+An \fIexpr\fB can also
+specified, in which case the breakpoint is triggered only if both 
+conditions are true. An optional action can be specified as above.
+.TP
+\fBb \-r \fIregexp-pattern\fB if {\fIexpr\fB} then [\fIcommands\fB]
+Set a breakpoint based on whether the given regular expression can be  
+matched with the next command (and its arguments) to be executed.  
+An \fIexpr\fB can also be
+specified, in which case the breakpoint is triggered only if both
+conditions are true. An optional action can be specified as above.
+
+When breakpoints are triggered using regular expressions,
+the \fBdbg\fR array is automatically set with the results. \fB$dbg(0)\fR
+contains the part of the command that was matched, and \fB$dbg(1)\fR
+through \fB$dbg(9)\fR contain up to nine subpattern matches (if any).
+.TP 
+\fBb \-\fI#\fR
+Delete the breakpoint specified by the number \fI#\fR. (The remaining
+breakpoints are not renumbered but retain their current numbers.)
+.TP
+\fBb \-\fR
+Delete all breakpoints without any further prompts or warnings.
+.SH EXAMPLES
+The following sets a breakpoint that is triggered whenever the 
+\fB$divisor\fR variable is set to zero, which would be useful to know
+before attempting to divide with it:
+
+.nf
+     dbg1.1> b if {$divisor == 0}
+.fi
+
+The following sets a breakpoint that uses regular expression matching
+to find the first instance of \fBset\fR in a command and print out the variable
+being set:
+
+.nf
+     dbg1.1>  b -r {set[ \t]*([a-zA-z_]*)} then {puts $dbg(1)}
+.fi
+
+The following sets a breakpoint that is triggered whenever a procedure
+named "getinput" is called:
+
+.nf  
+     dbg1.1>  b -g "getinput" 
+.fi
+
+.SH CAVEATS
+.PP
+Breakpoints operate only on the commands in scripts, not on commands entered 
+at the prompt.
+
+If the commands given for a breakpoint's action contain syntax 
+errors, the debugger takes no specific action for the breakpoint but 
+instead displays the next command to be executed followed by a prompt.
+
+Breakpoints that are triggered by expressions are triggered after the
+command responsible has finished execution. Breakpoints that are triggered
+by pattern matching are triggered before the command is run.
+
+When using breakpoints that are triggered by an expression, avoid using 
+actions that result in the expression  becoming false; if you do, the
+debugger performs the breakpoint action, but does not halt program
+execution because the breakpoint condition is no longer true.
+For example, the following breakpoint does not halt program
+execution when \fB$divisor\fR is zero; instead, it sets \fB$divisor\fR to 1 
+and continues program execution:
+
+.nf
+     dbg1.1> b if {$divisor == 0} then {set divisor 1}
+.fi
+
+No commands exist to rewind a script back to the beginning. To run a script
+a second time with the debugger, exit Tcl and restart it.
+.SH BUGS
+The compiler optimizes away most set commands, expressions, and even
+some control structures - this means that the debugger can
+occasionally miss breakpoints.  For example, there's no point in
+trying to break on a statement such as: set x 1.  This "optimizing
+away" behavior is pretty common to any good compiler.  However such
+compilers also have the ability to turn off such behavior.  Alas Tcl
+does not.  It should (and will if enough people complain).
+
+Although the \fBh\fRelp command shows that breakpoints can be set according
+to a script's line number, this feature has not yet been implemented.
+
+The debugger prompts cannot be changed without recompiling.
+
+The debugger can be used with Tk and Expect scripts, but no GUI
+interface is available.
+
+The same instance of the debugger is used for all executions of the 
+\fBinterpreter\fR command within a script. Thus, changes made to global
+variables persist after returning from an additional invocation of the
+\fBinterpreter\fR.
+.PP
+.SH TCL DEBUGGER HINTS
+.PP
+Since the debugger commands are all one letter in length, avoid defining
+procedures with one-letter names.
+
+You can automatically start the debugger and load your breakpoints 
+by putting the appropriate commands in the \fB.expect.rc\fR file 
+in your home directory. For example, if your \fB.expect.rc\fR file
+contains the following lines, the debugger flag is set and two 
+breakpoints are defined:
+
+.nf
+     exp_debug 1
+     b if {$divisor == 0} 
+     b if {$dividend == 1}
+.fi
+
+You can also use the \fBsource\fR command
+to execute another file that contains your breakpoint definitions.
+
+Enabling the debugger slows down program execution approximately 10% even 
+if no breakpoints are defined. Use the \fBexp_debug 0\fR command to unset
+the debugger flag when debugging is not needed, and \fBexp_debug 1\fR 
+to enable the debugger when required.
+
+The \fBdbg\fR array exists as long as the debugger flag is set (that is when
+[exp_debug] == 1). Your scripts can test for this using the 
+\fB[info exists dbg]\fR expression, which will return \fB1\fR when the 
+debugger flag is set and \fB0\fR when not. 
+
+Using \fBExpect's\fR diagnostics (specify the \fB\-d\fR option on the command
+line) along with the interactive debugger provides a lot of information about
+how \fBExpect\fR processes your commmands. Since the diagnostic messages
+are sent to STDERR, it is easy to redirect them into a log file that can
+be monitored using the Unix tail(1) command.
+
+For example, the following shell script can be used to start an 
+interactive \fBExpect\fR debugging session that uses a second window 
+running xterm(1) to monitor the STDERR output:
+
+.nf
+#!/bin/sh
+# This script creates an Xterm window that continuously displays the contents 
+# of a temporary file that receives all diagnostics information from Expect.
+# (Be certain your PATH points to touch, expect, and xterm
+touch /tmp/diags
+xterm -title ExpectDiag -e tail -f /tmp/diags &
+expect -d $* 2> /tmp/diags
+.fi
+
+You can also redirect the diagnostic messages to a \fIfile\fR using the 
+\fBexp_internal -f \fIfile\fB\fR command from within your scripts.
+
+Another tool you can use while debugging your scripts is TCL's
+\fBtrace\fR command, which monitors variable accesses.
+.SH SEE ALSO
+For specific information about the Tcl debugger, see
+\fI"A Debugger for Tcl Applications", \fRby Don Libes,
+Proceedings of the 1993 Tcl/Tk Workshop, Berkeley, CA, June 10-11, 1993.
+This is available through the Expect home page at 
+.nf
+     http://expect.nist.gov
+.fi
+
+Also see:
+.PP
+.BR Tcl (3),
+.BR trace (n),
+.PP
+\fIExpect FAQ (Frequently Asked Questions)\fR at:
+.nf
+     http://expect.nist.gov/FAQ.html
+.fi
+.PP
+.I
+"Exploring Expect: A Tcl-Based Toolkit for Automating Interactive Programs"
+\fRby Don Libes, pp. 602, ISBN 1-56592-090-2, O'Reilly and Associates, 1995.
+.PP
+.I
+"expect: Curing Those Uncontrollable Fits of Interactivity" \fRby Don Libes,
+Proceedings of the Summer 1990 USENIX Conference,
+Anaheim, California, June 11-15, 1990.
+.PP
+.I
+"Using
+.B expect
+to Automate System Administration Tasks" \fRby Don Libes,
+Proceedings of the 1990 USENIX Large Installation Systems Administration
+Conference, Colorado Springs, Colorado, October 17-19, 1990.
+.PP
+.I
+"Tcl: An Embeddable Command Language" \fRby John Ousterhout,
+Proceedings of the Winter 1990 USENIX Conference,
+Washington, D.C., January 22-26, 1990.
+.PP
+.I
+"expect: Scripts for Controlling Interactive Programs" \fRby Don Libes,
+Computing Systems, Vol. 4, No. 2, University of California Press Journals,
+November 1991.
+.PP
+.I
+"Regression Testing and Conformance Testing Interactive Programs", \fRby Don
+Libes, Proceedings of the Summer 1992 USENIX Conference, pp. 135-144,
+San Antonio, TX, June 12-15, 1992.
+.PP
+.I
+"Kibitz \- Connecting Multiple Interactive Programs Together", \fRby Don Libes,
+Software \- Practice & Experience, John Wiley & Sons, West Sussex, England,
+Vol. 23, No. 5, May, 1993.
+
+.SH AUTHOR
+Don Libes, National Institute of Standards and Technology
+
+.SH ACKNOWLEDGMENTS
+This man page was created by John Switzer <jrs@net.com>.
+.PP
+Thanks to John Ousterhout for Tcl.
+.PP
+The HISTORY file documents much of the evolution of the debugger.
+It makes interesting reading and might give you further insight to this
+software.  Thanks to the people mentioned in it who sent me bug fixes
+and gave other assistance.
+.PP
+Design and implementation of the debugger
+was paid for in part by the U.S. government and is therefore in the public
+domain.
+However the author and NIST would like credit
+if this program and documentation or portions of them are used.
