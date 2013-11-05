@@ -184,6 +184,7 @@ enum EventType {
 class RoutingEvent : public Event {
 public:
 		RoutingEvent();
+		virtual ~RoutingEvent() {}
 		virtual EventType get_type() = 0;
 };
 

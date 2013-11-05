@@ -47,10 +47,13 @@ if [ -f Makefile ] ; then
 	make distclean
 fi
 
+export CFLAGS="-Wno-unused-but-set-variable -Wno-narrowing"
+export CXXFLAGS="$CFLAGS"
+
 # if  [ "${test_cygwin}" = "true" ]; then
 #         ./configure --x-libraries=/usr/X11R6/lib --x-includes=/usr/X11R6/include --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "Ns configuration failed! Exiting ...";
 # else
-        ./configure --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER  --with-tcldebug || die "Ns configuration failed! Exiting ...";
+        ./configure --enable-debug --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER  --with-tcldebug || die "Ns configuration failed! Exiting ...";
 # fi
 
 if make

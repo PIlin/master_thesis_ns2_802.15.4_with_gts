@@ -61,6 +61,7 @@ public:
 	double time_;		/* time at which event is ready */
 	scheduler_uid_t uid_;	/* unique ID */
 	Event() : time_(0), uid_(0) {}
+	virtual ~Event() {}
 };
 
 /*
