@@ -854,6 +854,11 @@ int SSCS802_15_4::command(int argc, const char*const* argv)
 		mac->phy->PLME_GET_request(phyCurrentChannel);
 		mac->MLME_START_request(mac->mpib.macPANId,mac->tmp_ppib.phyCurrentChannel,15,15,mac->isPANCoor,false,false,false);
 	}
+	else
+	{
+		fprintf (stderr, "%s: unknown command %s\n", __FILE__, argv[2]);
+		return TCL_ERROR;
+	}
 
 	return TCL_OK;
 }
