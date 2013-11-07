@@ -219,7 +219,7 @@ void Phy802_15_4::PD_DATA_request(UINT_8 psduLength,Packet *psdu)
 		if (tx_state == p_IDLE)
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) sending pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
+			fprintf(stdout,"[%s::%s][%f](node %d) sending pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
 #endif
 			//construct a PPDU packet (not really a new packet in simulation, but still <psdu>)
 			construct_PPDU(psduLength,psdu);
@@ -231,6 +231,10 @@ void Phy802_15_4::PD_DATA_request(UINT_8 psduLength,Packet *psdu)
 			txPktCopy = psdu->copy();	//for debug purpose, we still want to access the packet after transmission is done
 			sendDown(psdu);			//WirelessPhy::sendDown()
 			tx_state = p_BUSY;		//for carrier sense
+#ifdef DEBUG_GTS
+			if( mac->txOption & TxOp_GTS )
+				printf( "[GTS] Current = %lf , trxTime %lf" , CURRENT_TIME , trx_time );
+#endif
 			sendOverH.start(trx_time);
 		}
 		else	//impossible
@@ -239,7 +243,7 @@ void Phy802_15_4::PD_DATA_request(UINT_8 psduLength,Packet *psdu)
 	else
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[D][TRX][%s::%s][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
+		fprintf(stdout,"[D][TRX][%s::%s][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
 #endif
 		Packet::free(psdu);
 		mac->PD_DATA_confirm(trx_state);
@@ -346,7 +350,7 @@ void Phy802_15_4::PLME_SET_TRX_STATE_request(PHYenum state)
 #ifdef DEBUG802_15_4
 				hdr_cmn *ch = HDR_CMN(rxPkt);
 				hdr_lrwpan *wph = HDR_LRWPAN(rxPkt);
-				fprintf(stdout,"[%s::%s][%f](node %d) FORCE_TRX_OFF sets error bit for incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(rxPkt),p802_15_4macSA(rxPkt),p802_15_4macDA(rxPkt),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[%s::%s][%f](node %d) FORCE_TRX_OFF sets error bit for incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(rxPkt),p802_15_4macSA(rxPkt),p802_15_4macDA(rxPkt),ch->uid(),wph->uid,ch->size());
 #endif
 				HDR_CMN(rxPkt)->error() = 1;	//incomplete reception -- force packet discard
 			}
@@ -356,7 +360,7 @@ void Phy802_15_4::PLME_SET_TRX_STATE_request(PHYenum state)
 #ifdef DEBUG802_15_4
 				hdr_cmn *ch = HDR_CMN(txPkt);
 				hdr_lrwpan *wph = HDR_LRWPAN(txPkt);
-				fprintf(stdout,"[%s::%s][%f](node %d) FORCE_TRX_OFF sets error bit for outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[%s::%s][%f](node %d) FORCE_TRX_OFF sets error bit for outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),wph->uid,ch->size());
 #endif
 				HDR_CMN(txPkt)->error() = 1;
 				sendOverH.cancel();
@@ -427,7 +431,7 @@ void Phy802_15_4::PLME_SET_request(PPIBAenum PIBAttribute,PHY_PIB *PIBAttributeV
 #ifdef DEBUG802_15_4
 					hdr_cmn *ch = HDR_CMN(rxPkt);
 					hdr_lrwpan *wph = HDR_LRWPAN(rxPkt);
-					fprintf(stdout,"[%s::%s][%f](node %d) SET phy channel sets error bit for incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(rxPkt),p802_15_4macSA(rxPkt),p802_15_4macDA(rxPkt),ch->uid(),wph->uid,ch->size());
+					fprintf(stdout,"[%s::%s][%f](node %d) SET phy channel sets error bit for incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(rxPkt),p802_15_4macSA(rxPkt),p802_15_4macDA(rxPkt),ch->uid(),wph->uid,ch->size());
 #endif
 					HDR_CMN(rxPkt)->error() = 1;
 				}
@@ -436,7 +440,7 @@ void Phy802_15_4::PLME_SET_request(PPIBAenum PIBAttribute,PHY_PIB *PIBAttributeV
 #ifdef DEBUG802_15_4
 					hdr_cmn *ch = HDR_CMN(txPkt);
 					hdr_lrwpan *wph = HDR_LRWPAN(txPkt);
-					fprintf(stdout,"[%s::%s][%f](node %d) SET phy channel sets error bit for outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),wph->uid,ch->size());
+					fprintf(stdout,"[%s::%s][%f](node %d) SET phy channel sets error bit for outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),wph->uid,ch->size());
 #endif
 					HDR_CMN(txPkt)->error() = 1;
 					sendOverH.cancel();
@@ -519,7 +523,7 @@ void Phy802_15_4::recv(Packet *p, Handler *)
 	{
 	case hdr_cmn::DOWN:
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) outgoing pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 		PD_DATA_request((UINT_8) ch->size(),p);
 		break;
@@ -600,8 +604,13 @@ void Phy802_15_4::recv(Packet *p, Handler *)
 		if (wph->SHR_SFD == defSHR_SFD)				//valid SFD
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+			fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
+
+#ifdef DEBUG_GTS
+			printf("[GTS] Received Packet : %p SN : %d\n", p, HDR_LRWPAN(p)->MHR_BDSN);
+#endif
+
 			wph->colFlag = false;
 			if (rxPkt == 0)
 			{
@@ -611,7 +620,7 @@ void Phy802_15_4::recv(Packet *p, Handler *)
 			else
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][COL][%s::%s][%f](node %d) COLLISION:\n\t First (power:%f): type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n\tSecond (power:%f): type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",
+				fprintf(stdout,"[D][COL][%s::%s][%f](node %d) COLLISION:\n\t First (power:%f): type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n\tSecond (power:%f): type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",
 					__FILE__,__FUNCTION__,CURRENT_TIME,index_,
 					rxPkt->txinfo_.RxPr,wpan_pName(rxPkt),p802_15_4macSA(rxPkt),p802_15_4macDA(rxPkt),HDR_CMN(rxPkt)->uid(),HDR_LRWPAN(rxPkt)->uid,HDR_CMN(rxPkt)->size(),
 					p->txinfo_.RxPr,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
@@ -749,7 +758,7 @@ void Phy802_15_4::recvOverHandler(Packet *p)
 	else if (p != rxPkt)				//packet corrupted (not the strongest one) or un-detectable
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[D][%s][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",(wph->phyCurrentChannel != ppib.phyCurrentChannel)?"CHN":"NOT",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[D][%s][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",(wph->phyCurrentChannel != ppib.phyCurrentChannel)?"CHN":"NOT",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 		rxThisTotNum[wph->phyCurrentChannel]--;
 		drop(p,(wph->phyCurrentChannel != ppib.phyCurrentChannel)?"CHN":"NOT");
@@ -766,7 +775,8 @@ void Phy802_15_4::recvOverHandler(Packet *p)
 		    ||ch->error())		//incomplete reception (due to FORCE_TRX_OFF),data packet received during ED or other errors
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[D][ERR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,__LINE__,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+			fprintf(stdout,"[D][ERR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",
+				__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 			drop(p,"ERR");
 		}
@@ -774,7 +784,8 @@ void Phy802_15_4::recvOverHandler(Packet *p)
 		{
 
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d --> PD_DATA_indication()\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+			fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d --> PD_DATA_indication()\n",
+				__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 			PD_DATA_indication(ch->size(),p,lq);	//MAC sublayer need to further check if the packet
 								//is really received successfully or not.
@@ -801,7 +812,7 @@ void Phy802_15_4::recvOverHandler(Packet *p)
 void Phy802_15_4::sendOverHandler(void)
 {
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[%s::%s][%f](node %d) sending over: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPktCopy),p802_15_4macSA(txPktCopy),p802_15_4macDA(txPktCopy),HDR_CMN(txPktCopy)->uid(),HDR_LRWPAN(txPktCopy)->uid,HDR_CMN(txPktCopy)->size());
+	fprintf(stdout,"[%s::%s][%f](node %d) sending over: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txPktCopy),p802_15_4macSA(txPktCopy),p802_15_4macDA(txPktCopy),HDR_CMN(txPktCopy)->uid(),HDR_LRWPAN(txPktCopy)->uid,HDR_CMN(txPktCopy)->size());
 #endif
 	assert(tx_state == p_BUSY);
 	assert(txPktCopy);

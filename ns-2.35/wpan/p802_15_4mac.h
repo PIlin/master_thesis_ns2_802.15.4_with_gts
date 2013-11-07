@@ -45,6 +45,8 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define DEBUG802_15_4
+#define DEBUG_GTS
 
 #ifndef p802_15_4mac_h
 #define p802_15_4mac_h
@@ -91,6 +93,11 @@ struct PAN_ELE
 #define TP_mlme_poll_request		11
 #define TP_CCA_csmaca			12
 #define TP_RX_ON_csmaca			13
+
+// added by DaeMyeong Park for GTS
+#define TP_mlme_gts_request		14
+//end
+
 struct taskPending
 {
 	taskPending()
@@ -126,6 +133,12 @@ struct taskPending
 		CCA_csmaca_STEP = 0;
 		RX_ON_csmaca = false;
 		RX_ON_csmaca_STEP = 0;
+
+		// added by DaeMyeong Park for GTS
+		mlme_gts_request = 0;
+		mlme_gts_request_STEP = 0;
+		//end
+		
 	}
 
 	bool &taskStatus(UINT_8 task)
@@ -158,6 +171,10 @@ struct taskPending
 				return CCA_csmaca;
 			case TP_RX_ON_csmaca:
 				return RX_ON_csmaca;
+			//DaeMyeong Park
+			case TP_mlme_gts_request:
+				return mlme_gts_request;
+			//end
 			default:
 				assert(0);
 				// shutup the compiler.
@@ -195,6 +212,10 @@ struct taskPending
 				return CCA_csmaca_STEP;
 			case TP_RX_ON_csmaca:
 				return RX_ON_csmaca_STEP;
+			// added by DaeMyeong Park GTS
+			case TP_mlme_gts_request:
+				return mlme_gts_request_STEP;
+			//end
 			default:
 				assert(0);
 				// shutup compiler.
@@ -228,12 +249,23 @@ struct taskPending
 				return mlme_sync_request_frFunc;
 			case TP_mlme_poll_request:
 				return mlme_poll_request_frFunc;
+			// added by DaeMyeong Park for GTS
+			case TP_mlme_gts_request:
+				return mlme_gts_request_frFunc;
+			//end
 			default:
 				assert(0);
 				// shutup compiler.
 				return mlme_poll_request_frFunc;
 		}
 	}
+
+	// added by DaeMyeong Park for GTS
+	bool	mlme_gts_request;
+	UINT_8  mlme_gts_request_STEP;
+	char	mlme_gts_request_frFunc[ 81 ];
+	//end
+
 
 	//----------------
 	bool	mcps_data_request;
@@ -494,6 +526,10 @@ class Mac802_15_4 : public Mac
 	friend class CsmaCA802_15_4;
 	friend class SSCS802_15_4;
 	friend class Nam802_15_4;
+
+	//DaeMyeong
+	friend class macGtsTimer;
+	// end
 public:
 	Mac802_15_4(MAC_PIB *mp);
 	~Mac802_15_4();
@@ -524,8 +560,8 @@ public:
 	void MLME_GET_request(MPIBAenum PIBAttribute);
 /*TBD*/	void MLME_GTS_request(UINT_8 GTSCharacteristics,bool SecurityEnable);
 /*TBD*/	void MLME_GTS_confirm(UINT_8 GTSCharacteristics,MACenum status);
-/*TBD*/	void MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacteristics,
-				 bool SecurityUse, UINT_8 ACLEntry);
+/*TBD*//*	void MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacteristics,
+				 bool SecurityUse, UINT_8 ACLEntry); */ // SeokMin : implemented at SSCS802_15_4 class
 	void MLME_ORPHAN_response(IE3ADDR OrphanAddress,UINT_16 ShortAddress,bool AssociatedMember,bool SecurityEnable);
 	void MLME_RESET_request(bool SetDefaultPIB);
 	void MLME_RX_ENABLE_request(bool DeferPermit,UINT_32 RxOnTime,UINT_32 RxOnDuration);
@@ -564,6 +600,10 @@ protected:
 	void beaconSearchHandler(void);		//beacon searching times out during synchronization
 	void isPanCoor(bool isPC);
 
+	// added by DaeMyeong Park for GTS
+	void GtsHandler(void);
+	//end
+
 private:
 	void checkTaskOverflow(UINT_8 task);
 	void dispatch(PHYenum status,const char *frFunc,PHYenum req_state = p_SUCCESS,MACenum mStatus = m_SUCCESS);
@@ -589,6 +629,10 @@ private:
 	void mlme_sync_request(UINT_8 LogicalChannel, bool TrackBeacon,bool frUpper = false,PHYenum status = p_SUCCESS);
 	void mlme_poll_request(UINT_8 CoordAddrMode,UINT_16 CoordPANId,IE3ADDR CoordAddress,bool SecurityEnable,
 			       bool autoRequest = false,bool firstTime = false,PHYenum status = p_SUCCESS);
+
+	// added by DaeMyeong Park for GTS
+	void mlme_gts_request( UINT_8 GTSCharacteristics , bool SecurityEnable , PHYenum status = p_SUCCESS , bool frUpper = false );
+	//end
 
 	void csmacaBegin(char pktType);
 	void csmacaResume(void);
@@ -620,7 +664,14 @@ private:
 
 public:
 	static bool verbose;
-	static UINT_8 txOption;		//0x02=GTS; 0x04=Indirect; 0x00=Direct (only for 802.15.4-unaware upper layer app. packet)
+	// added by DaeMyeong Park for GTS
+	UINT_8 m_nRemainGTSTryCount;
+	UINT_8 txOption;
+	Packet* GtsDelayPacket;
+	//end
+
+
+	// static UINT_8 txOption;		//0x02=GTS; 0x04=Indirect; 0x00=Direct (only for 802.15.4-unaware upper layer app. packet)
 	static bool ack4data;
 	static UINT_8 callBack;		//0=no call back; 1=call back for failures; 2=call back for failures and successes
 	static UINT_32 DBG_UID;
@@ -681,6 +732,10 @@ private:
 	macBeaconRxTimer *bcnRxT;		//beacon reception timer
 	macBeaconSearchTimer *bcnSearchT;	//beacon search timer
 	macWakeupTimer *wakeupT; 		// 2.31 change:
+
+	// added by DaeMyeong Park for GTS
+	macGtsTimer *GtsTxT;
+	//end
 
 	//handlers
 	Mac802_15_4Handler txCmdDataH;

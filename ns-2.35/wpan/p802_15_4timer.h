@@ -240,6 +240,22 @@ private:
 	double		lastTime;
 };
 
+// added by DaeMyeong Park for GTS
+class macGtsTimer : public Mac802_15_4Timer
+{
+public:
+	macGtsTimer(Mac802_15_4 *m) : Mac802_15_4Timer() 
+	{
+		mac = m;
+	}
+	void	handle(Event *e);
+	void	start( double dWtime );
+	void	stop(void);
+private:
+	Mac802_15_4	*mac;
+};
+//end
+
 #endif
 
 // End of file: p802_15_4timer.h

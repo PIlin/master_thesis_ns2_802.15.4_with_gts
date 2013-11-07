@@ -156,6 +156,10 @@ bool CsmaCA802_15_4::canProceed(double wtime, bool afterCCA)
 	bool ok;
 	UINT_16 t_bPeriods,t_CAP;
 	double t_fCAP,t_CCATime,t_IFS,t_transacTime,bcnOtherTime,BI2;
+	
+	// added by DaeMyeong Park for GTS
+	hdr_cmn* ch = HDR_CMN(txPkt);
+	// end
 
 	waitNextBeacon = false;
 	wtime = mac->locateBoundary(mac->toParent(txPkt),wtime);
@@ -263,7 +267,7 @@ bool CsmaCA802_15_4::canProceed(double wtime, bool afterCCA)
 	if (!ok)
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) cannot proceed: bPeriodsLeft = %d, orders = %d/%d/%d, type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,mac->index_,bPeriodsLeft,mac->mpib.macBeaconOrder,mac->macBeaconOrder2,mac->macBeaconOrder3,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),HDR_LRWPAN(txPkt)->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) cannot proceed: bPeriodsLeft = %d, orders = %d/%d/%d, type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,mac->index_,bPeriodsLeft,mac->mpib.macBeaconOrder,mac->macBeaconOrder2,mac->macBeaconOrder3,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),HDR_LRWPAN(txPkt)->uid,ch->size());
 #endif
 		if (mac->macBeaconOrder2 != 15)
 		if (!mac->bcnRxT->busy())
@@ -374,7 +378,7 @@ bool CsmaCA802_15_4::canProceed(double wtime, bool afterCCA)
 			bcnOtherT->start(bcnOtherTime - CURRENT_TIME);
 		}
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[%s::%s][%f](node %d) cannot proceed: orders = %d/%d/%d, type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,mac->index_,mac->mpib.macBeaconOrder,mac->macBeaconOrder2,mac->macBeaconOrder3,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),HDR_LRWPAN(txPkt)->uid,ch->size());
+	fprintf(stdout,"[%s::%s][%f](node %d) cannot proceed: orders = %d/%d/%d, type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,mac->index_,mac->mpib.macBeaconOrder,mac->macBeaconOrder2,mac->macBeaconOrder3,wpan_pName(txPkt),p802_15_4macSA(txPkt),p802_15_4macDA(txPkt),ch->uid(),HDR_LRWPAN(txPkt)->uid,ch->size());
 #endif
 		if (mac->macBeaconOrder2 != 15)
 		if (!mac->bcnRxT->busy())
@@ -389,7 +393,7 @@ bool CsmaCA802_15_4::canProceed(double wtime, bool afterCCA)
 	}
 }
 
-void CsmaCA802_15_4::newBeacon(char )
+void CsmaCA802_15_4::newBeacon(char trx)
 {
 	//this function will be called by MAC each time a new beacon received or sent within the current PAN
 	double rate,wtime;
@@ -408,6 +412,7 @@ void CsmaCA802_15_4::newBeacon(char )
 	bcnTxTime = mac->macBcnTxTime / rate;
 	bcnRxTime = mac->macBcnRxTime / rate;
 	bPeriod = aUnitBackoffPeriod / rate;
+
 
 	if (waitNextBeacon)
 	if ((txPkt)
@@ -480,10 +485,26 @@ void CsmaCA802_15_4::start(bool firsttime,Packet *pkt,bool ackreq)
 		if (beaconEnabled)
 		if (firsttime)
 			wtime = mac->locateBoundary(mac->toParent(txPkt),wtime);
-		if (!canProceed(wtime))		
+		if (!canProceed(wtime))		// SeokMin : left CAP is not enough to send Packet
 			backoff = false;
 	}
-	if (backoff)
+	
+	// added by SeokMin for GTS : stop backoff in CFP
+	// it just return if current time is in CFP
+	mac->sfSpec2.parse(); 
+	double dOneSlotTime = (aBaseSlotDuration * (1 << mac->macSuperframeOrder2)) / mac->phy->getRate('s');
+	double dUntilLastCapDuration = dOneSlotTime * ( mac->sfSpec2.FinCAP + 1);
+	double dFinishCapTime = dUntilLastCapDuration + ( mac->macBcnRxTime / mac->phy->getRate('s') );
+	if( dFinishCapTime < CURRENT_TIME && mac->sfSpec2.FinCAP != 0 ) 
+	{
+		waitNextBeacon = true;	//mac->newBeacon() 에서 csmacaResume() 한다
+		printf("[GTS] CURRENT_TIME is in CFP. csmaca start() is returned\n");
+		return;
+	}
+	// end of added code for GTS
+
+
+	if (backoff)	// SeokMin : left CAP is enough to send Packet
 		backoffT->start(wtime);
 }
 
@@ -508,7 +529,7 @@ void CsmaCA802_15_4::backoffHandler(void)
 
 void CsmaCA802_15_4::RX_ON_confirm(PHYenum status)
 {
-	double wtime;
+	double /*now,*/wtime;
 
 	if (status != p_RX_ON)
 	{
@@ -520,6 +541,7 @@ void CsmaCA802_15_4::RX_ON_confirm(PHYenum status)
 	}
 
 	//locate backoff boundary if needed
+	//now = CURRENT_TIME;
 	if (beaconEnabled)
 		wtime = mac->locateBoundary(mac->toParent(txPkt),0.0);
 	else

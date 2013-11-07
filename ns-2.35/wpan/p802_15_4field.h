@@ -262,17 +262,102 @@ struct GTSFields
 	GTSDescriptor list[7];	//GTS descriptor list
 };
 
+// SeokMin : 사실 GTSFields 안에 GTSSpec이 있지만 이걸 이용해서 둘다 조작한다. 비콘에는 GTSFields가 쓰인다
 struct GTSSpec
 {
 	GTSFields fields;
 
 	UINT_8 count;		//GTS descriptor count
-	bool permit;		//GTS permit
-	bool recvOnly[7];	//reception only
-	UINT_8 slotStart[7];	//starting slot
-	UINT_8 length[7];	//length in slots
+	bool permit;		//GTS permit			(from GTSFields)
+	bool recvOnly[7];	//reception only		(from GTSFields)
+	UINT_8 slotStart[7];	//starting slot		(from GTSFields)
+	UINT_8 length[7];	//length in slots		(from GTSFields)
 
-	void parse(void)
+	// added by SeokMin for GTS
+	// PANCO
+        void removeNullGTS(void)        //gtsSpec에 시작 슬롯이 0인것은 삭제
+        {
+                int i, j;
+                GTSSpec tempField;
+
+                parse();
+
+                memset( &tempField, 0x00, sizeof(tempField) );
+                tempField.setPermit( permit );
+
+                j = 0;
+                for( i = 0; i < count; i++ )
+                {
+#ifdef DEBUG_GTS
+                        printf("[GTS] in removeNullGTS. i: %d j: %d slotstart[%d] : %d\n",i,j,i,slotStart[i]);
+#endif
+                        if( slotStart[ i ] != 0 )
+                        {
+                                tempField.setSlotStart( j, slotStart[ i ] );
+                                tempField.setLength( j, length[ i ] );
+                                tempField.setRecvOnly( j, recvOnly[ i ] );
+                                tempField.fields.list[ j ] = fields.list[ i ];
+                                j++;
+#ifdef DEBUG_GTS
+                                printf(" slotstart != 0 j: %d\n", j);
+#endif
+                        }
+                }
+                tempField.setCount( j );
+
+                //fields = tempField.fields;
+                memcpy(&fields, &(tempField.fields), sizeof(fields));
+                parse();
+        }
+
+        void defragGTS(void)
+        {
+                int i, checkSlot;
+                GTSSpec tempField;
+
+                parse();
+
+                memset( &tempField, 0x00, sizeof(tempField) );
+                tempField.setPermit( permit );
+
+                checkSlot = aNumSuperframeSlots;
+                for( i = 0; i < count; i++ )
+                {
+			tempField.fields.list[ i ].devAddr16  = fields.list[ i ].devAddr16;
+                        tempField.setSlotStart( i, checkSlot - length[ i ] );
+                        tempField.setLength( i, length[ i ] );
+                        tempField.setRecvOnly( i, recvOnly[ i ] );
+                       // tempField.fields.list[ i ] = fields.list[ i ];
+
+                        checkSlot = checkSlot - tempField.length[ i ];
+			
+                        if( checkSlot == 0 )
+                        {
+#ifdef DEBUG_GTS
+                                printf("p802_15_4field.h struct GTSSpec::defragGTS checkSlot == 0 error\n");
+#endif
+                                assert(0);
+                        }
+                }
+
+                tempField.setCount( count );            
+                memcpy(&fields, &(tempField.fields), sizeof(fields));
+                parse();
+        }
+
+	int getAllocLength()
+	{
+		int i, nlength = 0;
+		parse();
+		for( i = 0; i < count; i++ )
+		{
+			nlength += length[ i ];
+		}
+		return nlength;
+	}
+	// end of added code for GTS
+
+	void parse(void)	// GTSField 값을 가지고 읽기 쉽게 GTSSpec에 있는 변수에 정보를 채운다
 	{
 		int i;
 		count = (fields.spec & 0xe0) >> 5;
@@ -305,17 +390,19 @@ struct GTSSpec
 	void setSlotStart(UINT_8 ith,UINT_8 st)
 	{
 		slotStart[ith] = st;
-		slotStart[ith] = (fields.list[ith].slotSpec & 0x0f) + (st << 4);
+		//slotStart[ith] = (fields.list[ith].slotSpec & 0x0f) + (st << 4);	// original code : ns-2 2.34
+		fields.list[ith].slotSpec = (fields.list[ith].slotSpec & 0x0f) + (st << 4);	// changed by SeokMin for GTS
 	}
 	void setLength(UINT_8 ith,UINT_8 len)
 	{
 		length[ith] = len;
-		length[ith] = (fields.list[ith].slotSpec & 0xf0) + len;
+		//length[ith] = (fields.list[ith].slotSpec & 0xf0) + len;	// original code : ns-2 2.34
+		fields.list[ith].slotSpec = (fields.list[ith].slotSpec & 0xf0) + len;	// changed by SeokMin for GTS
 	}
-	int size(void)
+	int size(void)	// GTS Field의 크기?
 	{
 		count = (fields.spec & 0xe0) >> 5;
-		return (1 + 1 + 3 * count);
+		return (1 + 1 + 3 * count);		// spec, dir, GTSDescriptor
 	}
 };
 

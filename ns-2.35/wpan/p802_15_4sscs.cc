@@ -156,14 +156,71 @@ SSCS802_15_4::~SSCS802_15_4()
 {
 }
 
-void SSCS802_15_4::MCPS_DATA_confirm(UINT_8 , MACenum )
+// added by DaeMyeong Park for GTS
+void SSCS802_15_4::MLME_GTS_confirm(UINT_8 GTSCharacteristics , MACenum status)
 {
 }
+//end
 
-void SSCS802_15_4::MCPS_DATA_indication(UINT_8 , UINT_16     , IE3ADDR ,
-					UINT_8 , UINT_16     , IE3ADDR ,
-					UINT_8 , Packet *msdu, UINT_8  ,
-					bool   , UINT_8 )
+// implemented by DaeMyeong Park for GTS
+void SSCS802_15_4::MCPS_DATA_confirm(UINT_8 msduHandle,MACenum status)
+{
+	double dRequiredGtsTime = 0;
+	double dOneSlotTime = 0;
+
+	UINT_8 nGTSCharacteristics = 0;
+
+	switch( status )
+	{
+		case m_INVALID_GTS:
+		{
+#ifdef DEBUG_GTS
+			printf("[GTS] MCPS_DATA_confirm. case InvalidGTS: 1 mac->GtsDelayPacket: %p\n", mac->GtsDelayPacket);
+#endif
+			dRequiredGtsTime = mac->phy->trxTime( mac->GtsDelayPacket ) + ( ( aTurnaroundTime / mac->phy->getRate('s') ) / 2 );
+			dOneSlotTime = ( aBaseSlotDuration * ( 1 << mac->macSuperframeOrder2 ) ) / mac->phy->getRate('s');			
+#ifdef DEBUG_GTS
+			printf("[GTS] MCPS_DATA_confirm. case InvalidGTS: 2\n");
+#endif
+			for( int i = 0 ; i < 7 ; i++ )
+			{
+				if( dOneSlotTime >= dRequiredGtsTime )
+				{
+#ifdef DEBUG_GTS
+					printf( "[GTS] Device. gts request slot size = %d\n" , i + 1 );
+#endif
+					nGTSCharacteristics |= ( ( i + 1 ) << 4 ); // Slot Length 설정
+					nGTSCharacteristics |= ( 1 << 3 ); // 방향 1
+					nGTSCharacteristics |= ( 1 << 2 ); // 타입 1 
+					// nGTSCharacteristics |= ( << ); // 예약 1
+#ifdef DEBUG_GTS
+					printf("[GTS] MCPS_DATA_confirm. case InvalidGTS: 3\n");
+#endif
+					mac->MLME_GTS_request( nGTSCharacteristics , false );
+					break;
+				}
+			}
+
+			// 여기로 빠져 나오면 gts 7개의 크기보다 더 큰 크기를 보내야 함으로, 에러를 보내야 함
+			// google translate: When you arrive here gts 7 to send a larger size than the size of the dog by, the error must be sent
+		}
+		break;
+
+		default:
+			break;
+	}
+
+			// ( ( ( mac->GtsDelayPacket->size() + macHeaderLen(FrmCtrl) ) + defPHY_HEADER_LEN ) * 8 ) / phy->getRate('d')
+			// 1. 데이터의 크기, aTurnAroundTime(ack 안쓰면 /2), Ack 크기(옵션이고 우리는 계산하지 않음)를 통해 전송 예상 시간을 구하고, 그 크기만큼의 GTS 슬롯을 요청하는 명령 프레임 작성
+		// void Mac802_15_4::MLME_GTS_request(UINT_8 GTSCharacteristics, bool SecurityEnable)
+			// GTSCharacteristics -> page 163 참조
+			// 길이 4bit, 방향 1(송신)이고 1bit, 타입 1(항당)이고 1bit, 예약은 2bit 무시
+}
+
+void SSCS802_15_4::MCPS_DATA_indication(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR SrcAddr,
+					UINT_8 DstAddrMode,UINT_16 DstPANId,IE3ADDR DstAddr,
+					UINT_8 msduLength,Packet *msdu,UINT_8 mpduLinkQuality,
+					bool SecurityUse,UINT_8 ACLEntry)
 {
 	Packet::free(msdu);
 }
@@ -337,6 +394,100 @@ void SSCS802_15_4::MLME_POLL_confirm(MACenum )
 {
 }
 
+// implemented by SeokMin for GTS
+void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacteristics,
+                                      bool SecurityUse, UINT_8 ACLEntry)
+{
+        // PANCO
+        // TBD : decide to allocate GTS in 4 Beacon tranmission.
+
+        int nRequestedLength = (GTSCharacteristics & 0xF0) >> 4;        // 1111 0000
+        bool bForReceive = (GTSCharacteristics & 0x08) >> 3;            // 0000 1000
+        bool bForAlloc = (GTSCharacteristics & 0x04) >> 2;              // 0000 0100
+        bool bIsAlreadyAlloc = false;
+        int i;
+	GTSSpec *pGtsSpec = &(mac->gtsSpec);
+
+#ifdef DEBUG_GTS
+        printf( "[GTS] In Gts_indication nRequestedLength = %d , DevAddress %d\n" , nRequestedLength , DevAddress );
+#endif
+        if( DevAddress >= 0xfffe )
+                return;
+        if( mac->mpib.macBeaconOrder == 15 )
+                return;
+        if( mac->mpib.macSuperframeOrder == 15 )
+                return;
+        if( mac->mpib.macGTSPermit == false )
+                return;
+
+        pGtsSpec->parse();
+
+        for(i = 0; i < pGtsSpec->count; i++)
+        {
+                if( DevAddress == pGtsSpec->fields.list[ i ].devAddr16 )
+                {
+                        bIsAlreadyAlloc = true;
+                        break;
+                }
+        }
+
+        if( bForAlloc == true )
+        {
+                if( bIsAlreadyAlloc == true )
+                {
+                        pGtsSpec->setSlotStart( i, 0 );
+                }
+                // If GTS descriptor's start slot is 0, it will be removed in BeaconTxHandler after copy GTS Spec to Beacon.
+
+                if( nRequestedLength <= (7 - pGtsSpec->getAllocLength()) )
+                {
+                        pGtsSpec->setSlotStart( pGtsSpec->count, aNumSuperframeSlots - pGtsSpec->getAllocLength()  - nRequestedLength );
+                        pGtsSpec->setLength( pGtsSpec->count, nRequestedLength );
+                        pGtsSpec->setRecvOnly( pGtsSpec->count, bForReceive );
+                        pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
+                        pGtsSpec->setCount( pGtsSpec->count + 1 );
+#ifdef DEBUG_GTS
+                        printf("[GTS] allocation Succeed. count: %d [%d]startslot: %d \n", pGtsSpec->count , pGtsSpec->count-1, pGtsSpec->slotStart[pGtsSpec->count-1] );
+#endif
+                }
+                else if( pGtsSpec->count < 7 )
+                {
+                        pGtsSpec->setLength( pGtsSpec->count, (7 - pGtsSpec->getAllocLength()) );     // supportable GTS length
+                        pGtsSpec->setRecvOnly( pGtsSpec->count, bForReceive );
+                        pGtsSpec->setSlotStart( pGtsSpec->count, 0 );       // set start slot to 0
+                        pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
+                        pGtsSpec->setCount( pGtsSpec->count + 1 );
+#ifdef DEBUG_GTS
+                        printf("[GTS] allocation failed. \n");
+#endif
+                }
+                else
+                {
+                        // TBD : can't allocate GTS and can't notify failure.
+                }
+        }
+        else    // free GTS
+        {
+                if( bIsAlreadyAlloc == true )
+                {
+                        pGtsSpec->setSlotStart( i, 0 );
+                        pGtsSpec->removeNullGTS();
+                        pGtsSpec->defragGTS();
+                }
+        }
+        pGtsSpec->parse();
+#ifdef DEBUG_GTS
+        printf( "[GTS] After Gts_indication gtsSpce.count = %d\n" , pGtsSpec->count);
+        for(i=0; i<pGtsSpec->count; i++)
+        {
+                printf("[%d]DevAddress: %d, [%d]slotStart: %d  \n", i, pGtsSpec->fields.list[i].devAddr16, i, pGtsSpec->slotStart[i] );
+        }
+#endif
+        // Beacon will be updated with updated GTS Spec in beaconTxHandler()
+}
+
+
+
 //--------------------------------------------------------------------------
 
 char *sscsTaskName[] = {"NONE",
@@ -445,6 +596,13 @@ void SSCS802_15_4::startPANCoord(bool isClusterTree,bool txBeacon,UINT_8 BO,UINT
 			//permit association
 			t_mpib.macAssociationPermit = true;
 			mac->MLME_SET_request(macAssociationPermit,&t_mpib);
+			// added by SeokMin for GTS
+			// PANCO
+			t_mpib.macGTSPermit = def_macGTSPermit;		// set GTS permit
+			mac->MLME_SET_request(macGTSPermit, &t_mpib);	// set GTS permit to mpib
+			mac->gtsSpec.fields.spec = 0;			// memset
+			mac->gtsSpec.setPermit(mac->mpib.macGTSPermit);	// gtsSpec은 비콘 만들어 보낼때 사용한다
+			// end of added code for GTS 
 			if (txBeacon)
 			{
 				sscsTaskP.taskStep(sscsTP_startPANCoord)++;
@@ -733,6 +891,41 @@ int SSCS802_15_4::command(int argc, const char*const* argv)
 	// --- $node sscs startBeacon <beaconOrder = 3> <SuperframeOrder = 3>
 	// --- $node sscs stopBeacon
 	int i;
+
+        // added by DaeMyeong Park for GTS
+        if ((strcmp(argv[2], "txOption") == 0))
+        {
+                if( (strcmp(argv[3], "GTS") == 0) && (strcmp(argv[4], "On") == 0) )
+                {
+#ifdef DEBUG_GTS
+                        printf( "[GTS] txOption GTS On\n" );
+#endif
+                        mac->txOption |= TxOp_GTS;
+                }
+                // added by Seok Min
+                // Free GTS
+                else if( (strcmp(argv[3], "GTS") == 0) && (strcmp(argv[4], "Off") == 0) )
+                {
+#ifdef DEBUG_GTS
+                        printf( "[GTS] txOption GTS Off. CURRENT_TIME : %lf\n", CURRENT_TIME);
+#endif
+                        if( mac->txOption & TxOp_GTS )
+                        {
+                                mac->txOption &= ~(TxOp_GTS);
+                                mac->MLME_GTS_request( 0x00, false );
+                        }
+                }
+                else
+                {
+#ifdef DEBUG_GTS
+                        printf( "[GTS] invalid txOption value error.\n");
+#endif
+                        assert(0);
+                        //mac->txOption &= ~(0x02);
+                }
+                // end of added code by SeokMin
+        }
+        // end of added code by DaeMyeong
 
 	if ((strcmp(argv[2], "startPANCoord") == 0)
 	||  (strcmp(argv[2], "startCTPANCoord") == 0))

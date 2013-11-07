@@ -388,7 +388,10 @@ void macWakeupTimer::start(void)
 	bcnRxTime = mac->macBcnRxTime / mac->phy->getRate('s');
 	now = CURRENT_TIME;
 	while (now - bcnRxTime > BI)
-	bcnRxTime += BI;
+	{
+		bcnRxTime += BI;
+	}
+
 	{
 		tmpf = (now - bcnRxTime);;
 		wtime = BI - tmpf-aTurnaroundTime/mac->phy->getRate('s');
@@ -410,7 +413,118 @@ void macWakeupTimer::handle(Event *)
 	EnergyModel *em = mac->netif_->node()->energy_model();
 	if (em)
 	{
+#ifdef DEBUG_GTS
+		printf( "[GTS] WakeUp Timer Event Handler\n" );
+#endif
 		mac->phy->wakeupNode(0);
 	}
 }
+
+// added by DaeMyeong Park for GTS
+void macGtsTimer::start( double dWtime )
+{
+	/* double dOneSlotTime = 0;
+	double dWtime = 0;
+	double dNow = 0;
+	double dGtsDuration = 0;
+	bool bIsCheck = false;
+
+	dNow = CURRENT_TIME;
+	dOneSlotTime = (aBaseSlotDuration * (1 << mac->macSuperframeOrder2)) / mac->phy->getRate('s');
+
+	for( int i = 0 ; i < 7 ; i++ )
+	{
+		if( mac->gtsSpec2.fields.list[ i ].devAddr16 == mac->mpib.macShortAddress )
+		{
+			int nSlotNum =  4 >> ( mac->gtsSpec2.fields.list[ i ].slotSpec );
+			if( nSlotNum == 0 )
+			{
+				//GTS 할당 실패 프리미 티브 전송 
+				return;
+			}
+
+			dGtsDuration = dOneSlotTime * nSlotNum;
+			bIsCheck = true;
+		}
+	}
+
+	if( !bIsCheck )
+	{
+		// GTS 할당을 요청한 상태일 때만 4에서 까야 함.
+		// 비콘에 내정보가 없으면, 4에서 까야 함.
+		return;
+	}
+
+	dWtime = dGtsDuration - ( dNow - mac->macBcnRxTime ); 
+	*/
+
+	Mac802_15_4Timer::start(dWtime);
+
+	/* double Sd,Bi,bcnRxTime,now,len12s,wtime;
+	double tmpf;
+
+	Sd = (aBaseSuperframeDuration * (1 << mac->macSuperframeOrder2)) / mac->phy->getRate('s');
+	Bi = (aBaseSuperframeDuration * (1 << mac->macBeaconOrder2)) / mac->phy->getRate('s');
+	bcnRxTime = mac->macBcnRxTime / mac->phy->getRate('s');
+
+	now = CURRENT_TIME;
+
+	while (now - bcnRxTime > BI)
+	{
+		bcnRxTime += BI;
+	}
+	len12s = 12 / mac->phy->getRate('s');
+	
+	tmpf = now - bcnRxTime;
+	wtime = BI - tmpf;
+
+	Mac802_15_4Timer::start(wtime);
+*/
+
+	/* 
+ * 	double BI,bcnRxTime,now,len12s,wtime;
+	double tmpf;
+
+	BI = (aBaseSuperframeDuration * (1 << mac->macBeaconOrder2)) / mac->phy->getRate('s');
+	bcnRxTime = mac->macBcnRxTime / mac->phy->getRate('s');
+	now = CURRENT_TIME;
+	while (now - bcnRxTime > BI)
+		bcnRxTime += BI;
+	len12s = 12 / mac->phy->getRate('s');
+
+	{
+		tmpf = (now - bcnRxTime);;
+		wtime = BI - tmpf;
+	}
+
+	if (wtime >= len12s)
+		wtime -= len12s;
+
+	tmpf = now + wtime;
+	if (tmpf - lastTime < BI - len12s)
+	{
+		tmpf = 2 * BI;
+		tmpf = tmpf - now;
+		tmpf = tmpf + bcnRxTime;
+		wtime = tmpf - len12s;
+	}
+	lastTime = now + wtime;
+	Mac802_15_4Timer::start(wtime);
+	*/
+}
+
+void macGtsTimer::handle( Event* e )
+{
+	reset();
+	mac->GtsHandler();
+		
+	// this->stop();
+}
+
+void macGtsTimer::stop(void)
+{
+	Mac802_15_4Timer::stop();
+}
+//end
+
 // End of file: p802_15_4timer.cc

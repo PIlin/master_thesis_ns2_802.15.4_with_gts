@@ -55,8 +55,7 @@
 #include "p802_15_4fail.h"
 #include "p802_15_4nam.h"
 
-bool Mac802_15_4::verbose = false;
-UINT_8 Mac802_15_4::txOption = 0x00;	//0x02=GTS; 0x04=Indirect; 0x00=Direct (only for 802.15.4-unaware upper layer app. packet)
+bool Mac802_15_4::verbose = true;	//0x02=GTS; 0x04=Indirect; 0x00=Direct (only for 802.15.4-unaware upper layer app. packet)
 bool Mac802_15_4::ack4data = true;
 UINT_8 Mac802_15_4::callBack = 1;	//0=no call back; 1=call back for failures; 2=call back for failures and successes
 UINT_32 Mac802_15_4::DBG_UID = 0;
@@ -161,16 +160,18 @@ int Mac802_15_4Class::method(int ac, const char*const* av)
 					tcl.result("on");
 				return (TCL_OK);
 			}
-			else if (strcmp(argv[2], "txOption") == 0)
+			/* else if (strcmp(argv[2], "txOption") == 0)
 			{
-				if (Mac802_15_4::txOption == 0x02)
+				// if (Mac802_15_4::txOption == 0x02)
+				if (txOption == 0x02)
 					tcl.result("GTS");
-				else if (Mac802_15_4::txOption == 0x04)
+				// else if (Mac802_15_4::txOption == 0x04)
+				else if (txOption == 0x04)
 					tcl.result("Indirect");
 				else
 					tcl.result("Direct");
 				return (TCL_OK);
-			}
+			} */
 			else if (strcmp(argv[2], "ack4data") == 0)
 			{
 				if (!Mac802_15_4::ack4data)
@@ -195,11 +196,12 @@ int Mac802_15_4Class::method(int ac, const char*const* av)
 					Mac802_15_4::verbose = false;
 				return (TCL_OK);
 			}
-			else if (strcmp(argv[2], "txOption") == 0)
+			/*else if (strcmp(argv[2], "txOption") == 0)
 			{
-				Mac802_15_4::txOption = atoi(argv[3]);
+				//Mac802_15_4::txOption = atoi(argv[3]);
+				txOption = atoi(argv[3]);
 				return (TCL_OK);
-			}
+			}*/
 			else if (strcmp(argv[2], "ack4data") == 0)
 			{
 				if (strcmp(argv[3], "on") == 0)
@@ -435,9 +437,20 @@ Mac802_15_4::Mac802_15_4(MAC_PIB *mp) : Mac(),
 	nam = new Nam802_15_4((isPANCoor)?Nam802_15_4::def_PANCoor_clr:"black","black",this);
 	assert(nam);
 
+	// added by DaeMyeong Park for GTS
+	GtsTxT = new macGtsTimer(this);
+	assert(GtsTxT);
+	// end
+
 	chkAddMacLink(index_,this);
 
 	init();
+
+	// added by DaeMyeong Park for GTS
+	GtsDelayPacket = NULL;
+	txOption = 0x00;
+	m_nRemainGTSTryCount = 0;
+	// end
 }
 
 Mac802_15_4::~Mac802_15_4()
@@ -566,19 +579,38 @@ void Mac802_15_4::PLME_SET_TRX_STATE_confirm(PHYenum status)
 
 	if (status == p_SUCCESS) status = trx_state_req;
 
-	if (backoffStatus == 99)
+	// changed by DaeMyeong Park for GTS
+#ifdef DEBUG_GTS
+	if( ( GtsDelayPacket != NULL ) &&  ( txData == GtsDelayPacket ) ) // Device
 	{
-		if (trx_state_req == p_RX_ON)
-		{
-			if (taskP.taskStatus(TP_RX_ON_csmaca))
-			{
-				taskP.taskStatus(TP_RX_ON_csmaca) = false;
-				csmaca->RX_ON_confirm(status);
-			}
-		}
+		printf( "[GTS] if( ( GtsDelayPacket != NULL ) &&  ( txData == GtsDelayPacket ) ) // Device\n" );
 	}
 	else
-		dispatch(status,__FUNCTION__,trx_state_req);
+	{
+		printf( "[GTS] IN PLME_SET_TRX_STATE_confirm backoffStatus = %d txData: %p\n" , backoffStatus, txData );
+#endif
+		if (backoffStatus == 99)
+		{
+			if (trx_state_req == p_RX_ON)
+			{
+				if (taskP.taskStatus(TP_RX_ON_csmaca))
+				{
+					taskP.taskStatus(TP_RX_ON_csmaca) = false;
+					csmaca->RX_ON_confirm(status);
+				}
+			}
+		}
+		else
+		{
+#ifdef DEBUG_GTS
+			printf( "[GTS] IN PLME_SET_TRX_STATE_confirm before dispatch()  txData: %p\n" , txData );
+#endif
+			dispatch(status,__FUNCTION__,trx_state_req);
+		}
+#ifdef DEBUG_GTS
+	}
+#endif
+	//end
 
 	if (status != p_TX_ON) return;
 
@@ -587,14 +619,14 @@ void Mac802_15_4::PLME_SET_TRX_STATE_confirm(PHYenum status)
 	{
 		/* to synchronize better, we don't transmit the beacon here
 #ifdef DEBUG802_15_4
-fprintf(stdout,"[%s::%s][%f](node %d) transmit BEACON to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txBeacon),HDR_LRWPAN(txBeacon)->MHR_BDSN,HDR_CMN(txBeacon)->uid(),HDR_LRWPAN(txBeacon)->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) transmit BEACON to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txBeacon),HDR_LRWPAN(txBeacon)->MHR_BDSN,HDR_CMN(txBeacon)->uid(),HDR_LRWPAN(txBeacon)->uid);
 #endif
-if (!taskP.taskStatus(TP_mlme_start_request))	//not first beacon
-assert((!txAck)&&(!txCsmaca));		//all tasks should be done before next beacon
-txPkt = txBeacon;
-HDR_CMN(txBeacon)->direction() = hdr_cmn::DOWN;
-sendDown(txBeacon->refcopy(),this);
-*/
+		if (!taskP.taskStatus(TP_mlme_start_request))	//not first beacon
+			assert((!txAck)&&(!txCsmaca));		//all tasks should be done before next beacon
+		txPkt = txBeacon;
+		HDR_CMN(txBeacon)->direction() = hdr_cmn::DOWN;
+		sendDown(txBeacon->refcopy(),this);
+		*/
 	}
 	else if (txAck)
 	{
@@ -611,7 +643,12 @@ sendDown(txBeacon->refcopy(),this);
 			Scheduler::instance().schedule(&backoffBoundH, &(backoffBoundH.nullEvent), delay);
 	}
 	else
+	{
+#ifdef DEBUG_GTS
+		printf( "[GTS] IN PLME_SET_TRX_STATE_confirm before transmitCmdData()  txData: %p\n" , txData );
+#endif
 		transmitCmdData();
+	}
 }
 
 void Mac802_15_4::PLME_SET_confirm(PHYenum status,PPIBAenum PIBAttribute)
@@ -718,17 +755,25 @@ void Mac802_15_4::MLME_GET_request(MPIBAenum PIBAttribute)
 	sscs->MLME_GET_confirm(t_status,PIBAttribute,&mpib);
 }
 
-void Mac802_15_4::MLME_GTS_request(UINT_8, bool)
+// implemented by DaeMyeong Park for GTS
+void Mac802_15_4::MLME_GTS_request(UINT_8 GTSCharacteristics, bool SecurityEnable)
 {
+#ifdef DEBUG_GTS
+	printf("[GTS] Before call mlme_gts_request()\n");
+#endif
+	mlme_gts_request( GTSCharacteristics , SecurityEnable , p_UNDEFINED , true );
 }
 
 void Mac802_15_4::MLME_GTS_confirm(UINT_8, MACenum)
 {
 }
 
+/*
 void Mac802_15_4::MLME_GTS_indication(UINT_16, UINT_8, bool, UINT_8)
 {
+	printf("[GTS] empty Mac802_15_4::MLME_GTS_indication()\n");
 }
+*/
 
 void Mac802_15_4::MLME_ORPHAN_response(IE3ADDR OrphanAddress,UINT_16 ShortAddress,bool AssociatedMember,bool SecurityEnable)
 {
@@ -1046,9 +1091,86 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 				{
 					txop = 0;
 				}
-				txop |= Mac802_15_4::txOption;
+				txop |= txOption;
+				// txop |= Mac802_15_4::txOption;
 			}
 			wph->msduHandle = 0;
+
+			// added by DaeMyeong Park for GTS
+			if( ( txop & TxOp_GTS ) && ( (ch->ptype_ == PT_CBR) || (ch->ptype_==PT_FTP) ) )
+			{
+				txop &= ~( TxOp_Acked );
+				GtsDelayPacket = p;
+			}
+			else
+			{
+				txop &= ~( TxOp_GTS );
+			}	
+
+			//StopRelay : 패킷이 내려왔는데 현재 CFP인데  CBR 이고 GTS를 할당받은 상태가 아니면 드랍
+			/*
+				sfSpec2.parse(); 
+				double dOneSlotTime = (aBaseSlotDuration * (1 << macSuperframeOrder2)) / phy->getRate('s');
+
+				double dUntilLastCapDuration = dOneSlotTime * ( sfSpec2.FinCAP + 1);
+				double dFinishCapTime = dUntilLastCapDuration + ( macBcnRxTime / phy->getRate('s') );
+
+				if( dFinishCapTime < CURRENT_TIME && sfSpec2.FinCAP != 0 ) 
+				{
+					bool bIsCheck = false;
+					if( ch->ptype_ == PT_CBR )
+					{
+						for( int i = 0 ; i < 7 ; i++ )
+						{
+							if( gtsSpec2.fields.list[ i ].devAddr16 == mpib.macShortAddress )
+							{
+								bIsCheck = true;
+								double dOneSlotTime = (aBaseSlotDuration * (1 << macSuperframeOrder2)) / phy->getRate('s');
+								int nSlotNum =  gtsSpec2.slotStart[ i ];
+								if( nSlotNum != 0 )
+								{
+								}
+								else
+								{
+					printf( "[Park DaeMyeong (node %d)] FinCAP %d , dUntilLastCapDuration %lf , dFinishCapTime %lf\n", index_ , sfSpec2.FinCAP , dUntilLastCapDuration , dFinishCapTime );
+									drop( p , "GTS" );
+									return;
+								}
+								break;
+							}
+						}
+
+						if( !bIsCheck )
+						{
+					printf( "[Park DaeMyeong (node %d)] FinCAP %d , dUntilLastCapDuration %lf , dFinishCapTime %lf\n", index_ , sfSpec2.FinCAP , dUntilLastCapDuration , dFinishCapTime );
+							drop( p , "GTS" );
+							return;
+						}
+					}	
+
+					// if( ch->ptype_ != PT_CBR )
+					//if( ch->ptype_ == PT_AODV )
+					// if( ch->ptype_ == PT_AODV ) // || ch->ptype_ == PT_CBR )
+					//{
+						// printf( "[Park DaeMyeong] FinCAP %d , dUntilLastCapDuration %lf , dFinishCapTime %lf\n", sfSpec2.FinCAP , dUntilLastCapDuration , dFinishCapTime );
+					//	drop( p , "GTS" );
+					//	return;
+					//}
+					//else
+					//{
+					//	drop( p , "GTS" );
+					//	printf( "[Park DaeMyeong] CBR Drop Down\n" );
+					//	return;
+					//}
+				}
+				else
+				{
+					// printf( "[Park DaeMyeong] Not Not\n" );
+				}
+			// End */
+
+			// printf( "[Park DaeMyeong] MCPS_DATA_request = sucess , %d , GTS: %08X p: %08X (mcps data request)\n" , txop , GtsDelayPacket, p );
+			//end
 			MCPS_DATA_request(0,0,0,defFrmCtrl_AddrMode16,mpib.macPANId,p802_15_4macDA(p),ch->size(),p,0,txop);	//direct transmission w/o security
 		}
 		return;
@@ -1056,7 +1178,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 	else	//incoming packet
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) incoming pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 		resetCounter(p802_15_4macSA(p));
 		//if during ED scan, discard all frames received over the PHY layer data service (sec. 7.5.2.1.1)
@@ -1069,7 +1191,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 			if (taskP.mlme_scan_request_ScanType == 0x00)		//ED scan
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][ED][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[D][ED][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 				drop(p,"ED");
 				return;
@@ -1079,7 +1201,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 					&& (frmCtrl.frmType != defFrmCtrl_Type_Beacon))
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][APS][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[D][APS][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 				drop(p,"APS");
 				return;
@@ -1088,7 +1210,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 					&& ((frmCtrl.frmType != defFrmCtrl_Type_MacCmd)||(wph->MSDU_CmdType != 0x08)))
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][OPH][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[D][OPH][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 				drop(p,"OPH");
 				return;
@@ -1099,7 +1221,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 		if (ch->error())
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[D][ERR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+			fprintf(stdout,"[D][ERR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 			drop(p,"ERR");
 			return;
@@ -1109,7 +1231,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 			if (p->txinfo_.RxPr/(wph->rxTotPower-p->txinfo_.RxPr) < p->txinfo_.CPThresh)
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][LQI][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[D][LQI][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 				if (!wph->colFlag)	
 					nam->flashNodeColor(CURRENT_TIME);
@@ -1145,7 +1267,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 						&&(frmCtrl.frmType != defFrmCtrl_Type_MacCmd))
 				{
 #ifdef DEBUG802_15_4
-					fprintf(stdout,"[D][TYPE][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+					fprintf(stdout,"[D][TYPE][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 					drop(p,"TYPE");
 					return;
@@ -1156,7 +1278,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 						&&(wph->MHR_SrcAddrInfo.panID != mpib.macPANId))
 				{
 #ifdef DEBUG802_15_4
-					fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+					fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 					drop(p,"PAN");
 					return;
@@ -1168,7 +1290,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 							&&(wph->MHR_DstAddrInfo.panID != mpib.macPANId))
 					{
 #ifdef DEBUG802_15_4
-						fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+						fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 						drop(p,"PAN");
 						return;
@@ -1180,7 +1302,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 							&& (wph->MHR_DstAddrInfo.addr_16 != mpib.macShortAddress))
 					{
 #ifdef DEBUG802_15_4
-						fprintf(stdout,"[D][ADR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+						fprintf(stdout,"[D][ADR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 						drop(p,"ADR");
 						return;
@@ -1192,7 +1314,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 					if (wph->MHR_DstAddrInfo.addr_64 != aExtendedAddress)
 					{
 #ifdef DEBUG802_15_4
-						fprintf(stdout,"[D][ADR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+						fprintf(stdout,"[D][ADR][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 						drop(p,"ADR");
 						return;
@@ -1207,7 +1329,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 								||(wph->MHR_SrcAddrInfo.panID != mpib.macPANId))
 						{
 #ifdef DEBUG802_15_4
-							fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+							fprintf(stdout,"[D][PAN][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 							drop(p,"PAN");
 							return;
@@ -1220,7 +1342,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 								&&  (mpib.macCoordExtendedAddress != def_macCoordExtendedAddress))
 						{
 #ifdef DEBUG802_15_4
-							fprintf(stdout,"[D][COO][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+							fprintf(stdout,"[D][COO][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 							drop(p,"COO");
 							return;
@@ -1274,11 +1396,11 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 			{
 #ifdef DEBUG802_15_4
 				{
-					fprintf(stdout,"[D][BSY][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+					fprintf(stdout,"[D][BSY][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 					if (rxCmd)
-						fprintf(stdout,"\trxCmd pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",wpan_pName(rxCmd),p802_15_4macSA(rxCmd),p802_15_4macDA(rxCmd),HDR_CMN(rxCmd)->uid(),HDR_LRWPAN(rxCmd)->uid,HDR_CMN(rxCmd)->size());
+						fprintf(stdout,"\trxCmd pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",wpan_pName(rxCmd),p802_15_4macSA(rxCmd),p802_15_4macDA(rxCmd),HDR_CMN(rxCmd)->uid(),HDR_LRWPAN(rxCmd)->uid,HDR_CMN(rxCmd)->size());
 					if (txBcnCmd)
-						fprintf(stdout,"\ttxBcnCmd pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",wpan_pName(txBcnCmd),p802_15_4macSA(txBcnCmd),p802_15_4macDA(txBcnCmd),HDR_CMN(txBcnCmd)->uid(),HDR_LRWPAN(txBcnCmd)->uid,HDR_CMN(txBcnCmd)->size());
+						fprintf(stdout,"\ttxBcnCmd pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",wpan_pName(txBcnCmd),p802_15_4macSA(txBcnCmd),p802_15_4macDA(txBcnCmd),HDR_CMN(txBcnCmd)->uid(),HDR_LRWPAN(txBcnCmd)->uid,HDR_CMN(txBcnCmd)->size());
 				}
 #endif
 				drop(p,"BSY");
@@ -1291,7 +1413,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 			if (rxData)
 			{
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[D][BSY][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+				fprintf(stdout,"[D][BSY][%s::%s::%d][%f](node %d) dropping pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 				drop(p,"BSY");
 				return;
@@ -1313,7 +1435,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 		if (i == 2)
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[D][DUP][%s::%s][%f](node %d) dropping duplicated packet: type = %s, from = %d, uid = %d, mac_uid = %ld, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
+			fprintf(stdout,"[D][DUP][%s::%s][%f](node %d) dropping duplicated packet: type = %s, from = %d, uid = %d, mac_uid = %u, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
 #endif
 			drop(p,"DUP");
 			return;
@@ -1328,9 +1450,9 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 			recvAck(p);
 
 		//handle the command packet
-		else if (frmCtrl.frmType == defFrmCtrl_Type_MacCmd)
+		else if (frmCtrl.frmType == defFrmCtrl_Type_MacCmd) //PANCO
 			recvCommand(p);
-
+		
 		//handle the data packet
 		else if (frmCtrl.frmType == defFrmCtrl_Type_Data)
 		{
@@ -1353,7 +1475,7 @@ void Mac802_15_4::recvBeacon(Packet *p)
 	sfSpec2.parse();
 #ifdef DEBUG802_15_4
 	hdr_cmn* ch = HDR_CMN(p);
-	fprintf(stdout,"[%s::%s][%f](node %d) M_BEACON [BO:%d][SO:%d] received: from = %d, uid = %d, mac_uid = %ld, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,sfSpec2.BO,sfSpec2.SO,p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
+	fprintf(stdout,"[%s::%s][%f](node %d) M_BEACON [BO:%d][SO:%d] received: from = %d, uid = %d, mac_uid = %u, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,sfSpec2.BO,sfSpec2.SO,p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
 #endif
 	//calculate the time when we received the first bit of the beacon
 	txtime = phy->trxTime(p);
@@ -1364,6 +1486,9 @@ void Mac802_15_4::recvBeacon(Packet *p)
 	{
 		double tmpf;
 		tmpf = CURRENT_TIME - txtime;
+	#ifdef DEBUG_GTS
+		printf( "[GTS] In Beacon BcnTxTime = %lf, CurrentTime = %lf, BcnRxTime = %lf\n" , txtime , CURRENT_TIME , tmpf );
+	#endif
 		macBcnRxTime = tmpf * phy->getRate('s');
 	}
 
@@ -1478,17 +1603,84 @@ void Mac802_15_4::recvBeacon(Packet *p)
 		}
 		log(p);
 	}
+
+	// added by SeokMin for GTS
+	// Free GTS
+	if( false == (txOption & TxOp_GTS) )
+		return;
+	// end
+
+
+	// added by DaeMyeong Park for GTS
+	double dOneSlotTime = 0;
+	double dWtime = 0;
+	double dNow = 0;
+	double dGtsDuration = 0;
+	bool bIsCheck = false;
+
+	// hdr_lrwpan* wphGtsDelayPacket = HDR_LRWPAN( GtsDelayPacket );
+
+	dNow = CURRENT_TIME;
+	dOneSlotTime = (aBaseSlotDuration * (1 << macSuperframeOrder2)) / phy->getRate('s');
+#ifdef DEBUG_GTS
+	printf( "[GTS] In recv Beacon ,devAddr16 = %d , mpib.macShortAddress = %d , gtsSpec2 count = %d , StartSlot = %d\n" , gtsSpec2.fields.list[ 0 ].devAddr16 , mpib.macShortAddress , gtsSpec2.count , gtsSpec2.slotStart[0] );
+#endif
+	for( int i = 0 ; i < gtsSpec2.count ; i++ )
+	{
+		if( gtsSpec2.fields.list[ i ].devAddr16 == mpib.macShortAddress )
+		{
+#ifdef DEBUG_GTS
+			printf( "[GTS] Device found own GTS descriptor in Beacon\n" );
+#endif
+			bIsCheck = true;
+
+			int nSlotNum =  gtsSpec2.slotStart[ i ];
+			if( nSlotNum == 0 )
+			{
+				// sscs->MCPS_DATA_confirm( wphGtsDelayPacket->msduHandle , m_INVALID_GTS ); 이건 데이터 전송 시 GTS 할당 못 받았을 때 보내는 거
+				// if failed
+				// sscs->MLME_GTS_confirm( , m_DENIED );
+				return;
+			}
+			else
+			{
+				dGtsDuration = dOneSlotTime * nSlotNum;
+				dWtime = dGtsDuration - ( dNow - ( macBcnRxTime / phy->getRate('s') ) ) ;
+
+				m_nRemainGTSTryCount = 0;
+#ifdef DEBUG_GTS
+				printf( "[GTS] GTS Timer Start. dWtime = %lf current time = %lf , %p\n" , dWtime , CURRENT_TIME , GtsDelayPacket );
+#endif
+				GtsTxT->start( dWtime );
+			}
+			break;
+		}
+	}
+
+	if( !bIsCheck )
+	{
+		if( m_nRemainGTSTryCount > 0 )
+		{
+			m_nRemainGTSTryCount = m_nRemainGTSTryCount - 1;
+			if( m_nRemainGTSTryCount == 0 )
+			{
+				// MLME_GTS_confirm( , m_NO_DATA ) 함수 상수 NODATA 와 함께
+			}
+		}
+	}
+	// end of added code for GTS
 }
 
 void Mac802_15_4::recvAck(Packet *p)
 {
 	hdr_lrwpan *wph;
+	hdr_cmn *ch;
 	FrameCtrl frmCtrl;
 
 	wph = HDR_LRWPAN(p);
+	ch = HDR_CMN(p);
 #ifdef DEBUG802_15_4
-	hdr_cmn *ch = HDR_CMN(p);
-	fprintf(stdout,"[%s::%s][%f](node %d) M_ACK received: from = %d, SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macSA(p),wph->MHR_BDSN,ch->uid(),wph->uid);
+	fprintf(stdout,"[%s::%s][%f](node %d) M_ACK received: from = %d, SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macSA(p),wph->MHR_BDSN,ch->uid(),wph->uid);
 #endif
 	if ((!txBcnCmd)&&(!txBcnCmd2)&&(!txData))
 	{
@@ -1508,7 +1700,7 @@ void Mac802_15_4::recvAck(Packet *p)
 	else	
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) LATE ACK received: from = %d, SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macSA(p),wph->MHR_BDSN,ch->uid(),wph->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) LATE ACK received: from = %d, SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macSA(p),wph->MHR_BDSN,ch->uid(),wph->uid);
 #endif
 		//only handle late ack. for data packet
 		if (txPkt != txData)
@@ -1539,7 +1731,7 @@ void Mac802_15_4::recvAck(Packet *p)
 	log(p);
 }
 
-void Mac802_15_4::recvCommand(Packet *p)
+void Mac802_15_4::recvCommand(Packet *p) //PANCO
 {
 	hdr_lrwpan* wph;
 	FrameCtrl frmCtrl;
@@ -1548,7 +1740,7 @@ void Mac802_15_4::recvCommand(Packet *p)
 #ifdef DEBUG802_15_4
 	wph = HDR_LRWPAN(p);
 	hdr_cmn* ch = HDR_CMN(p);
-	fprintf(stdout,"[%s::%s][%f](node %d) %s received: from = %d, uid = %d, mac_uid = %ld, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
+	fprintf(stdout,"[%s::%s][%f](node %d) %s received: from = %d, uid = %d, mac_uid = %u, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
 #endif
 	ackReq = false;
 	switch(HDR_LRWPAN(p)->MSDU_CmdType)
@@ -1595,7 +1787,7 @@ void Mac802_15_4::recvCommand(Packet *p)
 			{
 				//send a beacon using unslotted CSMA-CA
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 				assert(!txBcnCmd);
 				txBcnCmd = Packet::alloc();
@@ -1663,7 +1855,15 @@ void Mac802_15_4::recvCommand(Packet *p)
 					phy->PLME_SET_request(phyCurrentChannel,&tmp_ppib);
 				}
 			break;
-		case 0x09:	//GTS request
+		case 0x09:
+			//GTS request
+			// PANCO. 석민 : GTS 할당 요청 커맨드 프레임을 받은 경우
+			// Association Request와 동일한 처리
+			// recvCommand()를 호출하기전 에 recv()
+			// MLME-ASSOCIATE.indication() will be passed to upper layer after the transmission of ack.
+			assert(rxCmd == 0);
+			rxCmd = p;
+			ackReq = true;
 			break;
 		default:
 			assert(0);
@@ -1691,7 +1891,7 @@ void Mac802_15_4::recvData(Packet *p)
 	wph = HDR_LRWPAN(p);
 	ch = HDR_CMN(p);
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[%s::%s][%f](node %d) DATA (%s) received: from = %d, uid = %d, mac_uid = %ld, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
+	fprintf(stdout,"[%s::%s][%f](node %d) DATA (%s) received: from = %d, uid = %d, mac_uid = %u, size = %d, SN = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),ch->uid(),wph->uid,ch->size(),wph->MHR_BDSN);
 #endif
 	frmCtrl.FrmCtrl = wph->MHR_FrmCtrl;
 	frmCtrl.parse();
@@ -1804,9 +2004,9 @@ void Mac802_15_4::txHandler(void)
 	hdr_lrwpan* wph = HDR_LRWPAN(p);
 	hdr_cmn* ch = HDR_CMN(p);
 	if (t_numRetry <= aMaxFrameRetries)
-		fprintf(stdout,"[%s::%s][%f](node %d) No ACK - retransmitting: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) No ACK - retransmitting: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 	else
-		fprintf(stdout,"[%s::%s][%f](node %d) No ACK - giving up: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) No ACK - giving up: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(p),p802_15_4macSA(p),p802_15_4macDA(p),ch->uid(),wph->uid,ch->size());
 #endif
 	if (t_numRetry > aMaxFrameRetries)
 		nam->flashLinkFail(CURRENT_TIME,p802_15_4macDA(p));
@@ -1869,7 +2069,7 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 				{
 #ifdef DEBUG802_15_4
 					if (!updateDeviceLink(tr_oper_est, &deviceLink1, &deviceLink2, p802_15_4macDA(txAck)))	//this ACK is for my child
-						fprintf(stdout,"[%f](node %d) outgoing ACK truncated by beacon: src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n", CURRENT_TIME,index_,p802_15_4macSA(txAck),p802_15_4macDA(txAck),HDR_CMN(txAck)->uid(),HDR_LRWPAN(txAck)->uid,HDR_CMN(txAck)->size());
+						fprintf(stdout,"[%f](node %d) outgoing ACK truncated by beacon: src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n", CURRENT_TIME,index_,p802_15_4macSA(txAck),p802_15_4macDA(txAck),HDR_CMN(txAck)->uid(),HDR_LRWPAN(txAck)->uid,HDR_CMN(txAck)->size());
 #endif
 					Packet::free(txAck);
 					txAck = 0;
@@ -1895,7 +2095,7 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 					}
 				}
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBeacon:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBeacon:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 				if (updateNFailLink(fl_oper_est,index_) == 0)
 				{
@@ -1936,14 +2136,33 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 				sfSpec.SuperSpec = 0;
 				sfSpec.setBO(mpib.macBeaconOrder);
 				sfSpec.setSO(mpib.macSuperframeOrder);
-				sfSpec.setFinCAP(aNumSuperframeSlots - 1);		//TBD: may be less than <aNumSuperframeSlots> when considering GTS
+			
+				// added by SeokMin for GTS
+				// PANCO
+				sfSpec.setFinCAP(aNumSuperframeSlots - 1 - gtsSpec.getAllocLength() );
+				// end
+
 				sfSpec.setBLE(mpib.macBattLifeExt);
 				sfSpec.setPANCoor(isPANCoor);
 				sfSpec.setAssoPmt(mpib.macAssociationPermit);
-				//populate the GTS fields -- more TBD when considering GTS
-				gtsSpec.fields.spec = 0;
-				gtsSpec.setPermit(mpib.macGTSPermit);
-				wph->MSDU_GTSFields = gtsSpec.fields;
+			
+				// changed by SeokMin for GTS
+				// PANCO
+				// GTS필드를 항상 null로 채워서 보내고 있었다. 기존 코드 : gtsSpec.fields.spec = 0;	// null 로 채움
+				// startPANCoord에서 null 로 채우도록 변경. permit도 거기서 하도록하였음.
+				// mpib.macGTSPermit = def_macGTSPermit;
+				// gtsSpec.setPermit(mpib.macGTSPermit);
+			
+				wph->MSDU_GTSFields = gtsSpec.fields;	// wph는 매번 보내는 beacon 프레임에 해당한다. 이걸 바꾸면 된다. gtsSpec.fields에는 GTSField, GTSSpec이 포함되어 있다.
+				gtsSpec.removeNullGTS();	// remove GTS descriptor(start slot 0) after send Beacon.  
+
+				/* TBD
+				* GTS 할당이 하나라도 되어 있으면 GTS 구간을 사용하는지 확인하기 위한 타이머 작동( CFP 시작지점에서 핸들러가 동작하는)
+				* 그 핸들러에서는 GTS 목록 개수와 같은 플래그 리스트를 가지고 GTS 구간 사용 안했음 플래그로 세팅한다
+				* phy 단에서 신호가 올라 왔는데 시간이 CFP 구간이면 해당 GTS 구간 사용 플래그를 사용했음으로 세팅한다.
+				*/
+				// end
+
 				//--- populate the pending address list ---
 				pendAddrSpec.numShortAddr = 0;
 				pendAddrSpec.numExtendedAddr = 0;
@@ -1983,7 +2202,7 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 				HDR_CMN(txBeacon)->next_hop_ = p802_15_4macDA(txBeacon);		//nam needs the nex_hop information
 				p802_15_4hdrBeacon(txBeacon);
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) transmit BEACON to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txBeacon),HDR_LRWPAN(txBeacon)->MHR_BDSN,HDR_CMN(txBeacon)->uid(),HDR_LRWPAN(txBeacon)->uid);
+				fprintf(stdout,"[%s::%s][%f](node %d) transmit BEACON to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txBeacon),HDR_LRWPAN(txBeacon)->MHR_BDSN,HDR_CMN(txBeacon)->uid(),HDR_LRWPAN(txBeacon)->uid);
 #endif
 				txPkt = txBeacon;
 				HDR_CMN(txBeacon)->direction() = hdr_cmn::DOWN;
@@ -2060,7 +2279,7 @@ void Mac802_15_4::isPanCoor(bool isPC)
 
 //-------------------------------------------------------------------------------------
 
-void Mac802_15_4::set_trx_state_request(PHYenum state,const char *,const char *,int )
+void Mac802_15_4::set_trx_state_request(PHYenum state,const char *frFile,const char *frFunc,int line)
 {
 #ifdef DEBUG802_15_4
 	fprintf(stdout,"[%s::%s][%f](node %d): %s request from [%s:%s:%d]\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,
@@ -2132,6 +2351,11 @@ void Mac802_15_4::dispatch(PHYenum status,const char *frFunc,PHYenum req_state,M
 			else if (taskP.taskStatus(TP_mlme_poll_request)
 					&& (strcmp(taskP.taskFrFunc(TP_mlme_poll_request),frFunc) == 0))
 				mlme_poll_request(taskP.mlme_poll_request_CoordAddrMode,taskP.mlme_poll_request_CoordPANId,taskP.mlme_poll_request_CoordAddress,taskP.mlme_poll_request_SecurityEnable,taskP.mlme_poll_request_autoRequest,false,status);
+			// added by DaeMyeong Park for GTS
+			else if (taskP.taskStatus(TP_mlme_gts_request)
+			&& (strcmp(taskP.taskFrFunc(TP_mlme_gts_request),frFunc) == 0))
+				mlme_gts_request( 0 , false , status );
+			// end
 			else	//default handling for txBcnCmd2
 			{
 				if (status == p_IDLE)
@@ -2279,6 +2503,12 @@ void Mac802_15_4::dispatch(PHYenum status,const char *frFunc,PHYenum req_state,M
 			else if (taskP.taskStatus(TP_mlme_poll_request)
 					&& (strcmp(taskP.taskFrFunc(TP_mlme_poll_request),frFunc) == 0))
 				mlme_poll_request(taskP.mlme_poll_request_CoordAddrMode,taskP.mlme_poll_request_CoordPANId,taskP.mlme_poll_request_CoordAddress,taskP.mlme_poll_request_SecurityEnable,taskP.mlme_poll_request_autoRequest,false,status);
+			// added by DaeMyeong Park for GTS
+			else if (taskP.taskStatus(TP_mlme_gts_request)
+			&& (strcmp(taskP.taskFrFunc(TP_mlme_gts_request),frFunc) == 0))
+				mlme_gts_request( 0 , false , status );
+			// end
+	
 			else	//default handling
 			{
 				wph = HDR_LRWPAN(txBcnCmd2);
@@ -2312,7 +2542,30 @@ void Mac802_15_4::dispatch(PHYenum status,const char *frFunc,PHYenum req_state,M
 			{
 				if (taskP.mcps_data_request_TxOptions & TxOp_GTS)		//GTS transmission
 				{
-					;	//TBD
+					// added by DaeMyeong Park for GTS
+					if (!frmCtrl.ackReq)	//ack. not required
+					{
+#ifdef DEBUG_GTS
+						printf( "[GTS] call mcps_data_request in dispatch(). PD_DATA_confirm. ack not req\n" );
+#endif
+						mcps_data_request(0,0,0,0,0,0,0,0,0,taskP.mcps_data_request_TxOptions,false,p_SUCCESS);
+					}
+					else
+					{
+#ifdef DEBUG_GTS
+						printf( "[GTS] call mcps_data_request in dispatch(). PD_DATA_confirm. ack req\n" );
+#endif
+						// TBD
+						/*
+ * 						strcpy(taskP.taskFrFunc(TP_mcps_data_request),"recvAck");
+						//enable the receiver
+						plme_set_trx_state_request(p_RX_ON);
+						txT->start(mpib.macAckWaitDuration/phy->getRate('s'));
+						waitDataAck = true; 
+						*/
+					}
+					// mcps_data_request(0,0,0,defFrmCtrl_AddrMode16,mpib.macPANId,p802_15_4macDA(GtsDelayPacket),ch->size(),GtsDelayPacket,0,txOption,false);	//direct transmission w/o security
+					// end of added code for GTS
 				}
 				else if ((taskP.mcps_data_request_TxOptions & TxOp_Indirect)	//indirect transmission
 						&& (capability.FFD&&(numberDeviceLink(&deviceLink1) > 0)))	//I am a coordinator
@@ -2372,6 +2625,11 @@ void Mac802_15_4::dispatch(PHYenum status,const char *frFunc,PHYenum req_state,M
 			else if (taskP.taskStatus(TP_mlme_poll_request)
 					&& (strcmp(taskP.taskFrFunc(TP_mlme_poll_request),frFunc) == 0))
 				mlme_poll_request(taskP.mlme_poll_request_CoordAddrMode,taskP.mlme_poll_request_CoordPANId,taskP.mlme_poll_request_CoordAddress,taskP.mlme_poll_request_SecurityEnable,taskP.mlme_poll_request_autoRequest,false,p_SUCCESS);
+			// added by DaeMyeong Park for GTS
+			else if (taskP.taskStatus(TP_mlme_gts_request)
+			&& (strcmp(taskP.taskFrFunc(TP_mlme_gts_request),frFunc) == 0))
+				mlme_gts_request( 0 , false , status );
+			// end	
 			else	//default handling for <txBcnCmd2>
 				taskSuccess('C');
 		}
@@ -2690,12 +2948,16 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 
 	task = TP_mcps_data_request;
 	if (frUpper) checkTaskOverflow(task);	
-
+#ifdef DEBUG_GTS
+	printf( "[GTS] in mcps_data_request. TxOption =  %d\n" , TxOptions );
+#endif
 	step = taskP.taskStep(task);
 	if (step == 0)
 	{
+		// printf("step = 0 msdu : %p \n", msdu);
 		//check if parameters valid or not
 		ch = HDR_CMN(msdu);
+		
 		if (ch->ptype() == PT_MAC)	//we only check for 802.15.4 packets (let other packets go through -- must be changed in implementation)
 			if ((SrcAddrMode > 0x03)
 					||(DstAddrMode > 0x03)
@@ -2712,14 +2974,39 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 		frmCtrl.FrmCtrl = 0;
 		frmCtrl.setFrmType(defFrmCtrl_Type_Data);	//data type
 		if (TxOptions & TxOp_Acked)
+		{
 			frmCtrl.setAckReq(true);
+		}
+		else
+		{	
+			frmCtrl.setAckReq(false);
+		}
 		if (SrcPANId == DstPANId)
 			frmCtrl.setIntraPan(true);		//Intra PAN
 		frmCtrl.setDstAddrMode(DstAddrMode);		//we reverse the bit order -- note to use the required order in implementation
 		frmCtrl.setSrcAddrMode(SrcAddrMode);		//we reverse the bit order -- note to use the required order in implementation
 		wph = HDR_LRWPAN(msdu);
+		
 		wph->MHR_DstAddrInfo.panID = DstPANId;
 		wph->MHR_DstAddrInfo.addr_64 = DstAddr;		//it doesn't matter if this is actually a 16-bit address
+
+		// added by DaeMyeong Park for GTS
+		//StopRelay : CBR 이면 모두 목적지를 0으로 하는 경우
+		/*
+		if( ch->ptype_ == PT_CBR )
+		{
+			wph->MHR_DstAddrInfo.panID = 0;
+			wph->MHR_DstAddrInfo.addr_64 = 0;		//it doesn't matter if this is actually a 16-bit address
+		}
+		else
+		{
+			wph->MHR_DstAddrInfo.panID = DstPANId;
+			wph->MHR_DstAddrInfo.addr_64 = DstAddr;		//it doesn't matter if this is actually a 16-bit address
+		} */
+
+		// printf( "[GTS] current step is 0. (node %d) DstPAId %d , DstAddr %d\n" , index_ , DstPANId , DstAddr );
+		// end added code for GTS
+
 		wph->MHR_SrcAddrInfo.panID = SrcPANId;
 		wph->MHR_SrcAddrInfo.addr_64 = SrcAddr;		//it doesn't matter if this is actually a 16-bit address
 		//ignore FCS in simulation
@@ -2727,18 +3014,250 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 		//for trace
 		p802_15_4hdrDATA(msdu);
 		//---------------------------------------------------------------------------------------------------
+		
+		if ( TxOptions & TxOp_GTS )
+		{
+			taskP.taskStep(task)++;
+			step = taskP.taskStep(task);
+		}
 
 		//perform security task if required (ignored in simulation)
 	}
 
+	// added by DaeMyeong Park for GTS
+	bool bIsAllocatedGtsSlot = false;
+	double dGtsDuration = 0;
+	double dWtime = 0;
+#ifdef DEBUG_GTS
+	printf( "[GTS] in mcps_data_request current step = %d\n" , step );	
+#endif
 	if (TxOptions & TxOp_GTS)	//GTS transmission
 	{
+		if( mpib.macShortAddress >= 0xfffe )
+		{
+#ifdef DEBUG_GTS
+			printf( "[GTS] Device has not short address if it dosen't associated.\n" );
+#endif
+			taskP.taskStatus(task) = false;
+			resetTRX();
+			txData = GtsDelayPacket;
+			txPkt = GtsDelayPacket;
+			GtsDelayPacket = NULL;
+			taskFailed('d', m_NO_SHORT_ADDRESS);
+			//taskP.taskStep(task) = 0;
+			return;
+		}
 		switch(step)
+		{
+			case 1:
+			{
+				// taskP.taskStep(task)++;
+				// strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
+				// csmacaBegin('d');
+
+				for( int i = 0 ; i < 7 ; i++ )
+				{
+#ifdef DEBUG_GTS
+					printf( "[GTS] when gts transmission requested. gtsSpec2.fields.list[ i ].devAddr16 %d , mpib.macShortAddress %d \n" , gtsSpec2.fields.list[ i ].devAddr16 , mpib.macShortAddress );
+#endif
+					if( gtsSpec2.fields.list[ i ].devAddr16 == mpib.macShortAddress )
+					{
+						double dOneSlotTime = (aBaseSlotDuration * (1 << macSuperframeOrder2)) / phy->getRate('s');
+						int nSlotNum =  gtsSpec2.slotStart[ i ];
+						// int nSlotNum =  4 >> ( gtsSpec2.fields.list[ i ].slotSpec );				
+						if( nSlotNum != 0 )
+						{
+							//Copy To Higher Version
+							double dEndAllocatedSlotTime = 0;
+							double dCurrentPacketTrxTime = 0;
+							double dRemainTime = 0;
+
+							dGtsDuration = dOneSlotTime * nSlotNum;
+							dWtime = dGtsDuration + ( macBcnRxTime / phy->getRate('s') );
+	
+							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + 1 ) ) + ( macBcnRxTime / phy->getRate('s') );
+							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + ( ( aTurnaroundTime / phy->getRate('s') ) / 2 );
+							dRemainTime = dEndAllocatedSlotTime - CURRENT_TIME;
+							// TBD : if GTS transmission data size if bigger than allocated GTS size.
+							{
+								// break;
+							}
+#ifdef DEBUG_gts
+							printf( "[GTS] Time , nSlotNum = %d , dOneSlotTime = %lf , dGtsDuration = %lf\n" , nSlotNum, dOneSlotTime, dGtsDuration);
+							printf( "[GTS] In gts Data request Packet Address = %08X , dWtime = %lf , Current_time = %lf, dEndAllocatedSlotTime = %lf , dCurrentPacketTrxTime = %lf , dRemainTime = %lf \n" , msdu , dWtime , CURRENT_TIME , dEndAllocatedSlotTime , dCurrentPacketTrxTime , dRemainTime );
+#endif
+							if( dWtime <= CURRENT_TIME && dRemainTime > dCurrentPacketTrxTime )
+							// if( dWtime == CURRENT_TIME )
+							{
+								//StopRelay
+							/*	hdr_cmn *ch = HDR_CMN(msdu);
+
+								if( ch->ptype_ == PT_CBR )
+								{
+									//StopRelay : GTS 로 보낼 CBR 이면 목적지를 0으로
+									// hdr_lrwpan* w = HDR_LRWPAN(msdu);
+									// w->MHR_DstAddrInfo.addr_64 = 0;
+									//
+									wph->MHR_DstAddrInfo.panID = 0;
+									wph->MHR_DstAddrInfo.addr_64 = 0;		//it doesn't matter if this is actually a 16-bit address
+									constructMPDU(msduLength,msdu,frmCtrl.FrmCtrl,mpib.macDSN++,wph->MHR_DstAddrInfo,wph->MHR_SrcAddrInfo,0,0,0);
+									//
+								}
+								else
+								{
+									taskP.taskStatus(task) = false;
+									drop( msdu , "GTS" );
+									return;
+								}
+							*/	//End
+
+								taskP.taskStatus(task) = true;
+								taskP.taskStep(task)++;
+								assert(!txData);
+								txData = msdu;
+	
+								strcpy(taskP.taskFrFunc(task),"PD_DATA_confirm");
+								plme_set_trx_state_request(p_TX_ON);
+#ifdef DEBUG_GTS
+								printf( "[GTS] sending GTS data , %p , %p\n" , txData , GtsDelayPacket );
+#endif
+								return;
+							}
+							//else
+							//{
+							//	taskP.taskStatus(task) = false;
+							//	drop( msdu , "GTS" );
+							//	return;
+							//}
+							bIsAllocatedGtsSlot = true;
+							break;
+						}
+						else
+						{
+						
+						}	
+					}
+				}
+
+				if( !bIsAllocatedGtsSlot )
+				{
+					if( m_nRemainGTSTryCount > 0 )
+					{
+						// another data transmission is requested.
+#ifdef DEBUG_GTS
+						printf( "[GTS] Device waits a GTS allocation.  m_nRemainGTSTryCount = %d\n" , m_nRemainGTSTryCount );
+#endif
+					}
+					else
+					{
+#ifdef DEBUG_GTS
+						printf( "[GTS] Device has no GTS.\n" );
+#endif
+						// taskP.taskStep(task)--;
+						sscs->MCPS_DATA_confirm( wph->msduHandle , m_INVALID_GTS );
+						//taskP.taskStep(step) = 0;	// changed by SeokMin
+					}
+				}
+				// taskP.taskStep(step) = 0;
+				return;
+			}
+			break;
+			case 2:
+			{
+#ifdef DEBUG_GTS
+				printf( "[GTS] mcps_data_request step 2. txData : %p\n" , txData );
+#endif
+				wph = HDR_LRWPAN(txData);
+				ch = HDR_CMN(txData);
+				frmCtrl.FrmCtrl = wph->MHR_FrmCtrl;
+				frmCtrl.parse();
+				if (frmCtrl.ackReq)	//ack. required
+				{
+#ifdef DEBUG_GTS
+					printf( "[GTS] mcps data request, ack required\n" );
+#endif
+					// TBD
+					/*
+ * 					taskP.taskStep(task)++;
+					strcpy(taskP.taskFrFunc(task),"recvAck");
+					//enable the receiver
+					plme_set_trx_state_request(p_RX_ON);
+					txT->start(mpib.macAckWaitDuration/phy->getRate('s'));
+					waitDataAck = true;
+					*/
+				}
+				else		//assume success if ack. not required
+				{
+#ifdef DEBUG_GTS
+					printf("[GTS] mcps_data_request, ack not required\n" );
+#endif
+					GtsDelayPacket = NULL;
+					taskP.taskStatus(task) = false;
+					resetTRX();
+
+					/* int tempS;
+					scanf("%d", &tempS); */
+					taskSuccess('d' , false );
+					// taskP.taskStep(task) = 0;	// changed by SeokMin
+					// fprintf(stdout, "[GTS] in MCPS_DATA_request : GtsDelayPacket = NULL\n");
+					// GtsDelayPacket = NULL;
+
+// 2.31 change: added this to put the node to sleep after successful pkt tx
+#ifdef SHUTDOWN
+					if ((em) && ((!capability.FFD)||(numberDeviceLink(&deviceLink1) == 0)) && (NOW>phy->T_sleep_)){ //I can sleep only if i am not a coordinator
+						phy->putNodeToSleep();
+					}
+#endif
+				}
+			}
+			break;
+			case 3:
+			{
+				/* if (status == p_SUCCESS)	//ack. received
+				{
+					taskP.taskStatus(task) = false;
+					resetTRX();
+					taskSuccess('d');
+				}
+				else				//time out when waiting for ack.
+				{
+					numDataRetry++;
+					if (numDataRetry <= aMaxFrameRetries)
+					{
+						taskP.taskStep(task) = 1;	//important
+						strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
+						waitDataAck = false;
+						csmacaResume();
+					}
+					else
+					{
+						taskP.taskStatus(task) = false;
+						resetTRX();
+						taskFailed('d',m_NO_ACK);
+					}
+				}
+#ifdef SHUTDOWN
+				if ((em) && ((!capability.FFD)||(numberDeviceLink(&deviceLink1) == 0)) && (NOW>phy->T_sleep_)){ //I can sleep only if i am not a coordinator
+					phy->putNodeToSleep();
+				} 
+#endif
+*/
+			}
+			default:
+			{
+			}
+			break;
+		}
+
+		/*
+ * 		switch(step)
 		{
 			//other cases: TBD
 			default:
 				break;
-		}
+		} 
+		*/
+		// end added code for GTS
 	}
 	else if ((TxOptions & TxOp_Indirect)				//indirect transmission
 			&& (capability.FFD&&(numberDeviceLink(&deviceLink1) > 0)))	//I am a coordinator
@@ -2819,6 +3338,9 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 		switch(step)
 		{
 			case 0:
+#ifdef DEBUG_GTS
+				printf("[GTS] direct step : 0 msdu : %p\n", msdu);
+#endif
 				taskP.taskStep(task)++;
 				strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
 				assert(!txData);
@@ -2826,6 +3348,9 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 				csmacaBegin('d');
 				break;
 			case 1:
+#ifdef DEBUG_GTS
+				printf("[GTS] direct case : 1 msdu : %p\n", msdu);
+#endif
 				if (status == p_IDLE)
 				{
 					taskP.taskStep(task)++;
@@ -2860,6 +3385,9 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 				}
 				break;
 			case 2:
+#ifdef DEBUG_GTS
+				printf("[GTS] direct case : 2 msdu : %p\n", msdu);
+#endif
 				wph = HDR_LRWPAN(txData);
 				ch = HDR_CMN(txData);
 				frmCtrl.FrmCtrl = wph->MHR_FrmCtrl;
@@ -2921,6 +3449,209 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 				break;
 		}
 	}
+#ifdef DEBUG_GTS
+	if( txOption & TxOp_GTS )
+		printf( "[GTS] end of mcps_data_request\n" );
+#endif
+}
+
+// implemented by DaeMyeong Park for GTS
+void Mac802_15_4::mlme_gts_request( UINT_8 GTSCharacteristics , bool SecurityEnable , PHYenum status , bool frUpper )
+{
+	UINT_8 step,task;
+	FrameCtrl frmCtrl;
+	hdr_lrwpan* wph;
+	// hdr_cmn* ch;
+	
+	EnergyModel *em = netif_->node()->energy_model();
+
+	task = TP_mlme_gts_request;
+	if (frUpper)
+		checkTaskOverflow(task);
+
+	// PAN_ELE
+	step = taskP.taskStep(task);
+	switch(step)
+	{
+		case 0:
+			//check if parameters valid or not
+			if ((!phy->channelSupported(panDes2.LogicalChannel))
+			|| ((panDes2.CoordAddrMode != defFrmCtrl_AddrMode16)&&(panDes2.CoordAddrMode != defFrmCtrl_AddrMode64)))
+			{
+				sscs->MLME_GTS_confirm(0,m_INVALID_PARAMETER);
+				return;
+			}
+
+			//assert(mpib.macShortAddress == 0xffff);		//not associated yet
+
+			//we may optionally track beacons if beacon enabled (here we don't)
+
+			tmp_ppib.phyCurrentChannel = panDes2.LogicalChannel;
+			phy->PLME_SET_request(phyCurrentChannel,&tmp_ppib);
+			mpib.macPANId = panDes2.CoordPANId;
+
+			// GTS 여기서 부터 2byte short 주소 써야 하나 ??
+			mpib.macCoordExtendedAddress = panDes2.CoordAddress_64;
+			
+			taskP.taskStatus(task) = true;
+			taskP.taskStep(task)++;
+			strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
+			taskP.mlme_associate_request_CoordAddrMode = panDes2.CoordAddrMode;
+			taskP.mlme_associate_request_SecurityEnable = panDes2.SecurityUse;
+			//--- send an gts request command ---
+#ifdef DEBUG802_15_4
+			// fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+#endif
+			assert(!txBcnCmd2);
+			txBcnCmd2 = Packet::alloc();
+			assert(txBcnCmd2);
+			wph = HDR_LRWPAN(txBcnCmd2);
+			constructCommandHeader(txBcnCmd2,&frmCtrl,0x09,panDes2.CoordAddrMode,panDes2.CoordPANId,panDes2.CoordAddress_64,defFrmCtrl_AddrMode64,0xffff,aExtendedAddress,panDes2.SecurityUse,false,true);
+			// capability.cap 이거~ 최대 CAP 크기 같음 
+			// p154, p163
+			wph->MSDU_Payload[0] = GTSCharacteristics;
+			// constructMPDU(2,txBcnCmd2,frmCtrl.FrmCtrl,mpib.macDSN++,wph->MHR_DstAddrInfo,wph->MHR_SrcAddrInfo,sfSpec2,0x09,0);
+			wph->MHR_SrcAddrInfo.addr_16 = mpib.macShortAddress;
+			constructMPDU(2,txBcnCmd2,frmCtrl.FrmCtrl,mpib.macDSN++,wph->MHR_DstAddrInfo,wph->MHR_SrcAddrInfo,0,0x09,0);
+			csmacaBegin('C');
+			//------------------------------------
+			break;
+		case 1:
+			if (status == p_IDLE)
+			{
+				taskP.taskStep(task)++;
+				strcpy(taskP.taskFrFunc(task),"PD_DATA_confirm");
+#ifdef DEBUG_GTS
+				if (Mac802_15_4::verbose)
+					fprintf(stdout,"[GTS] [%f](node %d) sending gts request command ...\n",CURRENT_TIME,index_);
+#endif
+				plme_set_trx_state_request(p_TX_ON);
+				break;
+			}
+			else
+			{
+				wph = HDR_LRWPAN(txData);
+				// ch = HDR_CMN(txData);
+				if (wph->msduHandle)	//from SSCS
+				{
+#ifdef DEBUG_GTS
+					printf( "[GTS] In gts request command m_CHANNEL_ACCESS_FAILURE (mcps data request)\n" );
+#endif
+					//let the upper layer handle the failure (no retry)
+					taskP.taskStatus(task) = false;
+					resetTRX();
+					taskFailed('C', m_CHANNEL_ACCESS_FAILURE);
+
+					txData = GtsDelayPacket;
+					txPkt = txData;
+					//taskFailed('d',m_CHANNEL_ACCESS_FAILURE);
+					taskFailed('d', m_CHANNEL_ACCESS_FAILURE , 0); //원래 위에 줄에 있는건데 csmasa를 안쓰니깐 마지막 인자 0을 넣어 줌
+				
+					// taskStep 를 0으로 넣어주지 않아도 되나??
+					return;
+				}
+				else
+				{
+#ifdef DEBUG_GTS
+					printf( "[GTS] In gts request command m_CHANNEL_ACCESS_FAILURE (mcps data request)\n" );
+#endif
+//					csmacaResume();
+					taskP.taskStatus(task) = false;
+					resetTRX();
+					taskFailed('C', m_CHANNEL_ACCESS_FAILURE);
+
+					txData = GtsDelayPacket;
+					txPkt = txData;
+					taskFailed('d', m_CHANNEL_ACCESS_FAILURE , 0);
+					
+					// taskStep 를 0으로 넣어주지 않아도 되나??
+#ifdef SHUTDOWN
+					if ((em) && ((!capability.FFD)||(numberDeviceLink(&deviceLink1) == 0)) && (NOW>phy->T_sleep_)){ //I can sleep only if i am not a coordinator
+						phy->putNodeToSleep();
+					}
+#endif
+					return;
+				}
+
+				// 여기는 다시 생각해 봐야 함, 매체가 아이들 하지 않을 때
+				/*
+				taskP.taskStatus(task) = false;
+				freePkt(txBcnCmd2);
+				txBcnCmd2 = 0;
+				//restore default values
+				sscs->MLME_ASSOCIATE_confirm(0,m_CHANNEL_ACCESS_FAILURE);
+				csmacaResume();
+				return;
+				*/
+			}
+			break;
+		case 2:
+			taskP.taskStep(task)++;
+			strcpy(taskP.taskFrFunc(task),"recvAck");
+			plme_set_trx_state_request(p_RX_ON);	//waiting for ack.
+			txT->start(mpib.macAckWaitDuration/phy->getRate('s'));
+			waitBcnCmdAck2 = true;
+			break;
+		case 3:
+			if (status == p_SUCCESS)	//ack. received
+			{
+				m_nRemainGTSTryCount = 4; // try count 
+
+				//taskP.taskStep(task) = 0;	// changed by SeokMin
+				// strcpy(taskP.taskFrFunc(task),"extractHandler");
+				plme_set_trx_state_request(p_TRX_OFF);		//we don't want to receive any packet at this moment
+#ifdef DEBUG_GTS
+				if (Mac802_15_4::verbose)
+					fprintf(stdout,"[GTS] [%f](node %d) ack for gts request command received\n",CURRENT_TIME,index_);
+#endif
+				taskSuccess('C',false);
+				taskP.taskStatus(task) = false;
+
+				// taskSuccess('C');
+				// extractT->start(aResponseWaitTime/phy->getRate('s'),false);
+			}
+			else				//time out when waiting for ack.
+			{
+#ifdef DEBUG_GTS
+				printf( "[GTS] ack timer expired. after send gts request command.\n" );
+#endif
+				numBcnCmdRetry2++;
+				if (numBcnCmdRetry2 <= aMaxFrameRetries)
+				{
+					taskP.taskStep(task) = 1;	//important
+					strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
+					waitBcnCmdAck2 = false;
+					csmacaResume();
+				}
+				else
+				{
+					taskP.taskStatus(task) = false;
+					resetTRX();
+					taskFailed( 'C' , m_NO_ACK );
+					
+					txData = GtsDelayPacket;
+					txPkt = txData;
+					taskFailed( 'd', m_NO_ACK, 0 );
+					return;
+
+					// try를 다 했을 때 생각해 봐야 함
+					/*
+					taskP.taskStatus(task) = false;
+					resetTRX();
+					freePkt(txBcnCmd2);
+					txBcnCmd2 = 0;
+					//restore default values
+					mpib.macPANId = def_macPANId;
+					mpib.macCoordExtendedAddress = def_macCoordExtendedAddress;
+					sscs->MLME_ASSOCIATE_confirm(0,m_NO_ACK);
+					csmacaResume();
+					return;
+					*/
+				}
+			}
+			break;
+	}
+
 }
 
 void Mac802_15_4::mlme_associate_request(UINT_8 LogicalChannel,UINT_8 CoordAddrMode,UINT_16 CoordPANId,IE3ADDR CoordAddress,
@@ -2962,7 +3693,7 @@ void Mac802_15_4::mlme_associate_request(UINT_8 LogicalChannel,UINT_8 CoordAddrM
 			taskP.mlme_associate_request_SecurityEnable = SecurityEnable;
 			//--- send an association request command ---
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 			assert(!txBcnCmd2);
 			txBcnCmd2 = Packet::alloc();
@@ -3045,7 +3776,7 @@ void Mac802_15_4::mlme_associate_request(UINT_8 LogicalChannel,UINT_8 CoordAddrM
 			strcpy(taskP.taskFrFunc(task),"PD_DATA_confirm");
 			//-- send a data request command to extract the response ---
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 			assert(!txBcnCmd2);
 			txBcnCmd2 = Packet::alloc();
@@ -3382,7 +4113,7 @@ void Mac802_15_4::mlme_orphan_response(IE3ADDR OrphanAddress,UINT_16 ShortAddres
 			{
 				//send a coordinator realignment command
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 				taskP.taskStatus(task) = true;
 				taskP.taskStep(task)++;
@@ -3777,7 +4508,7 @@ void Mac802_15_4::mlme_scan_request(UINT_8 ScanType,UINT_32 ScanChannels,UINT_8 
 					strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
 					//--- send a beacon request command ---
 #ifdef DEBUG802_15_4
-					fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+					fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 					assert(!txBcnCmd2);
 					txBcnCmd2 = Packet::alloc();
@@ -3950,7 +4681,7 @@ void Mac802_15_4::mlme_scan_request(UINT_8 ScanType,UINT_32 ScanChannels,UINT_8 
 				strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
 				//--- send an orphan notification command ---
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 				assert(!txBcnCmd2);
 				txBcnCmd2 = Packet::alloc();
@@ -4091,7 +4822,7 @@ void Mac802_15_4::mlme_start_request(UINT_16 PANId,UINT_8 LogicalChannel,UINT_8 
 				strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
 				//broadcast a realignment command
 #ifdef DEBUG802_15_4
-				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+				fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 				assert(!txBcnCmd2);
 				txBcnCmd2 = Packet::alloc();
@@ -4320,7 +5051,7 @@ void Mac802_15_4::mlme_poll_request(UINT_8 CoordAddrMode,UINT_16 CoordPANId,IE3A
 			taskP.mlme_poll_request_autoRequest = autoRequest;
 			//-- send a data request command ---
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+			fprintf(stdout,"[%s::%s][%f](node %d) before alloc txBcnCmd2:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 			assert(!txBcnCmd2);
 			txBcnCmd2 = Packet::alloc();
@@ -4522,7 +5253,7 @@ void Mac802_15_4::csmacaCallBack(PHYenum status)
 #ifdef DEBUG802_15_4
 	hdr_cmn *ch = HDR_CMN(txCsmaca);
 	if (status != p_IDLE)
-		fprintf(stdout,"[%s::%s][%f](node %d) backoff failed: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txCsmaca),p802_15_4macSA(txCsmaca),p802_15_4macDA(txCsmaca),ch->uid(),HDR_LRWPAN(txCsmaca)->uid,ch->size());
+		fprintf(stdout,"[%s::%s][%f](node %d) backoff failed: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txCsmaca),p802_15_4macSA(txCsmaca),p802_15_4macDA(txCsmaca),ch->uid(),HDR_LRWPAN(txCsmaca)->uid,ch->size());
 #endif
 
 	dispatch(status,__FUNCTION__);
@@ -4536,7 +5267,7 @@ int Mac802_15_4::getBattLifeExtSlotNum(void)
 
 double Mac802_15_4::getCAP(bool small)
 {
-	double bcnTxTime,bcnRxTime,bcnOtherRxTime;
+	double bcnTxTime,bcnRxTime,bcnOtherRxTime/*,bPeriod*/;
 	double sSlotDuration,sSlotDuration2,sSlotDuration3,BI2,BI3,t_CAP,t_CAP2,t_CAP3;
 	double now,oneDay,tmpf;
 
@@ -4550,6 +5281,7 @@ double Mac802_15_4::getCAP(bool small)
 	bcnTxTime = macBcnTxTime / phy->getRate('s');
 	bcnRxTime = macBcnRxTime / phy->getRate('s');
 	bcnOtherRxTime = macBcnOtherRxTime / phy->getRate('s');
+	// bPeriod = aUnitBackoffPeriod / phy->getRate('s');
 	sSlotDuration = sfSpec.sd / phy->getRate('s');
 	sSlotDuration2 = sfSpec2.sd / phy->getRate('s');
 	sSlotDuration3 = sfSpec3.sd / phy->getRate('s');
@@ -4668,7 +5400,7 @@ double Mac802_15_4::getCAP(bool small)
 
 double Mac802_15_4::getCAPbyType(int type)
 {
-	double bcnTxTime,bcnRxTime,bcnOtherRxTime;
+	double bcnTxTime,bcnRxTime,bcnOtherRxTime/*,bPeriod*/;
 	double sSlotDuration,sSlotDuration2,sSlotDuration3,BI2,BI3,t_CAP,t_CAP2,t_CAP3;
 	double now,oneDay,tmpf;
 
@@ -4682,6 +5414,7 @@ double Mac802_15_4::getCAPbyType(int type)
 	bcnTxTime = macBcnTxTime / phy->getRate('s');
 	bcnRxTime = macBcnRxTime / phy->getRate('s');
 	bcnOtherRxTime = macBcnOtherRxTime / phy->getRate('s');
+	// bPeriod = aUnitBackoffPeriod / phy->getRate('s');
 	sSlotDuration = sfSpec.sd / phy->getRate('s');
 	sSlotDuration2 = sfSpec2.sd / phy->getRate('s');
 	sSlotDuration3 = sfSpec3.sd / phy->getRate('s');
@@ -4894,7 +5627,10 @@ void Mac802_15_4::transmitCmdData(void)
 			return;
 		}
 	}
-
+#ifdef DEBUG_GTS
+	if( txOption & TxOp_GTS )
+		printf( "[GTS] void Mac802_15_4::transmitCmdData(void)\n" );
+#endif
 	//transmit immediately
 	txBcnCmdDataHandler();
 }
@@ -4928,7 +5664,7 @@ void Mac802_15_4::taskSuccess(char task,bool csmacaRes)
 	double tmpf;
 
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[%s::%s][%f](node %d) task '%c' successful:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,task,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+	fprintf(stdout,"[%s::%s][%f](node %d) task '%c' successful:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,task,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 
 	if (task == 'b')	//beacon
@@ -5010,37 +5746,48 @@ void Mac802_15_4::taskSuccess(char task,bool csmacaRes)
 	}
 	else if (task == 'd')	//data
 	{
+		// printf( "1\n" );
 		assert(txData);
 
+		//printf( "[GTS] 2 txData: %08x\n", txData );
 		ch = HDR_CMN(txData);
 		wph = HDR_LRWPAN(txData);
 
+		//printf( "3\n" );
 		Packet *p = txData;
 		txData = 0;
+		//printf( "[GTS] p: %08x\n",p );
 		if (ch->ptype() == PT_MAC)
 		{
+		//printf( "4\n" );
 			assert(wph->msduHandle);
 			sscs->MCPS_DATA_confirm(wph->msduHandle,m_SUCCESS);
 		}
 		else
 		{
+		// printf( "5\n" );
 			if (Mac802_15_4::callBack == 2)
 			if (ch->xmit_failure_)
 				if (p802_15_4macDA(p) != (nsaddr_t)MAC_BROADCAST)
 			{
+				// printf( "[GTS] aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" );
 				ch->size() -= macHeaderLen(wph->MHR_FrmCtrl);
 				ch->xmit_reason_ = 1;
 				ch->xmit_failure_(p->refcopy(),ch->xmit_failure_data_);
 			}
 			if (callback_)	
 			{
+				// printf( "[GTS] bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" );
 				Handler *h = callback_;
 				callback_ = 0;
 				h->handle((Event*) 0);
 			}
 		}
 		//if it is a pending packet, delete it from the pending list
+		//printf( "6, %08X\n" , p );
+		
 		updateTransacLinkByPktOrHandle(tr_oper_del,&transacLink1,&transacLink2,p);
+		//printf( "7 , %08X\n" , p );
 		freePkt(p);
 	}
 	else
@@ -5056,7 +5803,7 @@ void Mac802_15_4::taskFailed(char task,MACenum status,bool csmacaRes)
 	hdr_lrwpan* wph;
 
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[D][FAIL][%s::%s][%f](node %d) task '%c' failed:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,task,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+	fprintf(stdout,"[D][FAIL][%s::%s][%f](node %d) task '%c' failed:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,task,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 
 	if ((task == 'b')	//beacon
@@ -5075,7 +5822,7 @@ void Mac802_15_4::taskFailed(char task,MACenum status,bool csmacaRes)
 		wph = HDR_LRWPAN(txData);
 		ch = HDR_CMN(txData);
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[D][FAIL][%s::%s::%d][%f](node %d) failure: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %ld, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(txData),p802_15_4macSA(txData),p802_15_4macDA(txData),ch->uid(),wph->uid,ch->size());
+		fprintf(stdout,"[D][FAIL][%s::%s::%d][%f](node %d) failure: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,__LINE__,CURRENT_TIME,index_,wpan_pName(txData),p802_15_4macSA(txData),p802_15_4macDA(txData),ch->uid(),wph->uid,ch->size());
 #endif
 		Packet *p = txData;
 		txData = 0;
@@ -5216,7 +5963,7 @@ void Mac802_15_4::constructACK(Packet *p)
 	p802_15_4hdrACK(ack);
 
 #ifdef DEBUG802_15_4
-	fprintf(stdout,"[%s::%s][%f](node %d) before alloc txAck:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+	fprintf(stdout,"[%s::%s][%f](node %d) before alloc txAck:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 	assert(!txAck);		//it's impossilbe to receive the second packet before
 				//the Ack has been sent out.
@@ -5412,6 +6159,10 @@ void Mac802_15_4::changeNodeColor(double atTime,const char *newColor,bool save)
 void Mac802_15_4::txBcnCmdDataHandler(void)
 {
 	int i;
+#ifdef DEBUG_GTS
+	if( txOption & TxOp_GTS  )
+		printf( "[GTS] txData = %p , GtsDelayPacket = %p" , txData , GtsDelayPacket );
+#endif
 
 	if (taskP.taskStatus(TP_mlme_scan_request))
 	if (txBcnCmd2 != txCsmaca)
@@ -5448,7 +6199,7 @@ void Mac802_15_4::txBcnCmdDataHandler(void)
 		else
 			sprintf(frm_type,"COMMAND_%d",HDR_LRWPAN(txBcnCmd)->MSDU_CmdType);
 		*/
-		fprintf(stdout,"[%s::%s][%f](node %d) transmit %s to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txBcnCmd),p802_15_4macDA(txBcnCmd),HDR_LRWPAN(txBcnCmd)->MHR_BDSN,HDR_CMN(txBcnCmd)->uid(),HDR_LRWPAN(txBcnCmd)->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) transmit %s to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txBcnCmd),p802_15_4macDA(txBcnCmd),HDR_LRWPAN(txBcnCmd)->MHR_BDSN,HDR_CMN(txBcnCmd)->uid(),HDR_LRWPAN(txBcnCmd)->uid);
 #endif
 		txPkt = txBcnCmd;
 		HDR_CMN(txBcnCmd)->direction() = hdr_cmn::DOWN;
@@ -5467,7 +6218,7 @@ void Mac802_15_4::txBcnCmdDataHandler(void)
 		else
 			sprintf(frm_type2,"COMMAND_%d",HDR_LRWPAN(txBcnCmd2)->MSDU_CmdType);
 		*/
-		fprintf(stdout,"[%s::%s][%f](node %d) transmit %s to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txBcnCmd2),p802_15_4macDA(txBcnCmd2),HDR_LRWPAN(txBcnCmd2)->MHR_BDSN,HDR_CMN(txBcnCmd2)->uid(),HDR_LRWPAN(txBcnCmd2)->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) transmit %s to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txBcnCmd2),p802_15_4macDA(txBcnCmd2),HDR_LRWPAN(txBcnCmd2)->MHR_BDSN,HDR_CMN(txBcnCmd2)->uid(),HDR_LRWPAN(txBcnCmd2)->uid);
 #endif
 		txPkt = txBcnCmd2;
 		HDR_CMN(txBcnCmd2)->direction() = hdr_cmn::DOWN;
@@ -5476,12 +6227,23 @@ void Mac802_15_4::txBcnCmdDataHandler(void)
 	else if (txData == txCsmaca)
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) transmit DATA (%s) to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txData),p802_15_4macDA(txData),HDR_LRWPAN(txData)->MHR_BDSN,HDR_CMN(txData)->uid(),HDR_LRWPAN(txData)->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) transmit DATA (%s) to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txData),p802_15_4macDA(txData),HDR_LRWPAN(txData)->MHR_BDSN,HDR_CMN(txData)->uid(),HDR_LRWPAN(txData)->uid);
 #endif
 		txPkt = txData;
 		HDR_CMN(txData)->direction() = hdr_cmn::DOWN;
 		sendDown(txData->copy(), this);		
 	}
+	// added by DaeMyeong Park for GTS
+	else if( ( GtsDelayPacket != NULL ) && ( txData == GtsDelayPacket ) )
+	{
+#ifdef DEBUG_GTS
+		fprintf(stdout,"[GTS] [%s::%s][%f](node %d) transmit DATA (%s) to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(txData),p802_15_4macDA(txData),HDR_LRWPAN(txData)->MHR_BDSN,HDR_CMN(txData)->uid(),HDR_LRWPAN(txData)->uid);
+#endif
+		txPkt = txData;
+		HDR_CMN(txData)->direction() = hdr_cmn::DOWN;
+		sendDown(txData->copy(), this);	
+	}
+	//end
 }
 
 void Mac802_15_4::IFSHandler(void)
@@ -5548,7 +6310,7 @@ void Mac802_15_4::IFSHandler(void)
 						return;
 					}
 #ifdef DEBUG802_15_4
-					fprintf(stdout,"[%s::%s][%f](node %d) before assign txBcnCmd:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+					fprintf(stdout,"[%s::%s][%f](node %d) before assign txBcnCmd:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 					assert(!txBcnCmd);		//we couldn't receive the data request command if we are processing txBcnCmd
 					txBcnCmd = pendPkt->refcopy();	
@@ -5565,7 +6327,7 @@ void Mac802_15_4::IFSHandler(void)
 						return;
 					}
 #ifdef DEBUG802_15_4
-					fprintf(stdout,"[%s::%s][%f](node %d) before assign txData:\n\t\ttxBeacon\t= %ld\n\t\ttxAck   \t= %ld\n\t\ttxBcnCmd\t= %ld\n\t\ttxBcnCmd2\t= %ld\n\t\ttxData  \t= %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
+					fprintf(stdout,"[%s::%s][%f](node %d) before assign txData:\n\t\ttxBeacon\t= %p\n\t\ttxAck   \t= %p\n\t\ttxBcnCmd\t= %p\n\t\ttxBcnCmd2\t= %p\n\t\ttxData  \t= %p\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,txBeacon,txAck,txBcnCmd,txBcnCmd2,txData);
 #endif
 					assert(!txData);		//we couldn't receive the data request command if we are processing txData
 					txData = pendPkt->refcopy();	
@@ -5606,6 +6368,17 @@ void Mac802_15_4::IFSHandler(void)
 			mpib.macShortAddress = *((UINT_16 *)wph->MSDU_Payload + 5);
 			dispatch(p_SUCCESS,__FUNCTION__);
 		}
+		
+		// added by SeokMin for GTS
+		// PANCO
+		// GTS 요청 커맨드를 받고나서 Ack보내는 걸 성공한 다음 IFS 뒤에 MLME_GTS_indication() 호출
+		else if (wph->MSDU_CmdType == 0x09)	// GTS request
+		{
+			// 인자( GTS를 요구한 장비 16비트 주소, GTS Characteristic, SecurityLevel, ACL 어쩌구)
+			sscs->MLME_GTS_indication(wph->MHR_SrcAddrInfo.addr_16, wph->MSDU_Payload[0], frmCtrl.secu, 0);
+		}
+		// end
+
 		Packet::free(rxCmd);	//we logged the command packet before, here just free it
 		rxCmd = 0;
 	}
@@ -5640,12 +6413,42 @@ void Mac802_15_4::backoffBoundHandler(void)
 	if (txAck)		//<txAck> may have been cancelled by <macBeaconRxTimer>
 	{
 #ifdef DEBUG802_15_4
-		fprintf(stdout,"[%s::%s][%f](node %d) transmit M_ACK to %d: SN = %d, uid = %d, mac_uid = %ld\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txAck),HDR_LRWPAN(txAck)->MHR_BDSN,HDR_CMN(txAck)->uid(),HDR_LRWPAN(txAck)->uid);
+		fprintf(stdout,"[%s::%s][%f](node %d) transmit M_ACK to %d: SN = %d, uid = %d, mac_uid = %u\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,p802_15_4macDA(txAck),HDR_LRWPAN(txAck)->MHR_BDSN,HDR_CMN(txAck)->uid(),HDR_LRWPAN(txAck)->uid);
 #endif
 		txPkt = txAck;
 		HDR_CMN(txAck)->direction() = hdr_cmn::DOWN;
 		sendDown(txAck->refcopy(), this);
 	}
 }
+
+// added by DaeMyeong Park for GTS
+void Mac802_15_4::GtsHandler(void)
+{
+	// printf( "[GTS] In GtsHandler " );
+	// printf( "[%f](node %d) \n",CURRENT_TIME,index_);
+	if( GtsDelayPacket != NULL )
+	{
+		// hdr_lrwpan* wph = HDR_LRWPAN(GtsDelayPacket);
+		hdr_cmn *ch = HDR_CMN(GtsDelayPacket);
+	
+		//taskP.taskStep(task)++;
+		//printf( "[GTS] Call Gts Handler , %d\n" , taskP.taskStep(task) );
+#ifdef DEBUG_GTS
+		printf( "[GTS] [%lf] (node %d) Call Gts Handler , %p\n" , CURRENT_TIME , index_ , GtsDelayPacket );
+#endif
+		// MCPS_DATA_request(0,0,0,defFrmCtrl_AddrMode16,mpib.macPANId,p802_15_4macDA(GtsDelayPacket),ch->size(),GtsDelayPacket,0,txOption);	//direct transmission w/o security
+		// Free GTS
+		// Seok Min : GtsDelayPacket must be sent after GTS has been deallocated.
+		txOption |= TxOp_GTS;
+
+		UINT_8 task;
+
+		task = TP_mcps_data_request;
+		taskP.taskStatus(task) = false; 
+		mcps_data_request(0,0,0,defFrmCtrl_AddrMode16,mpib.macPANId,p802_15_4macDA(GtsDelayPacket),ch->size(),GtsDelayPacket,0,txOption,true);	//direct transmission w/o securit
+		//GtsDelayPacket = NULL;
+	}
+}
+// end of added code for GTS
 
 // End of file: p802_15_4mac.cc

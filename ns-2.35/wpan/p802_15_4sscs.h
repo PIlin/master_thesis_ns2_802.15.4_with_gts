@@ -159,6 +159,10 @@ class SSCS802_15_4
 public:
 	SSCS802_15_4(Mac802_15_4 *m);
 	~SSCS802_15_4();
+	// added by DaeMyeong Park for GTS
+	void MLME_GTS_confirm(UINT_8 GTSCharacteristics , MACenum status);
+	//end
+
 	void MCPS_DATA_confirm(UINT_8 msduHandle,MACenum status);
 	void MCPS_DATA_indication(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR SrcAddr,
 				  UINT_8 DstAddrMode,UINT_16 DstPANId,IE3ADDR DstAddr,
@@ -182,6 +186,8 @@ public:
 	void MLME_START_confirm(MACenum status);
 	void MLME_SYNC_LOSS_indication(MACenum LossReason);
 	void MLME_POLL_confirm(MACenum status);
+	void MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacteristics,
+                                 bool SecurityUse, UINT_8 ACLEntry);	// SeokMin : moved from Mac802_15_4 class
 
 protected:
 	void checkTaskOverflow(UINT_8 task);
