@@ -416,26 +416,26 @@ Node/MobileNode instproc add-interface { channel pmodel lltype mactype qtype qle
 	set outerr $outerr_($t)
 	set fec $fec_($t)
 
-	#
-	# Initialize ARP table only once.
-	#
-	if { $arptable_ == "" } {
-		set arptable_ [new ARPTable $self $mac]
-		# FOR backward compatibility sake, hack only
-		if {$imepflag != ""} {
-			set drpT [$self mobility-trace Drop "IFQ"]
-		} else {
-			set drpT [cmu-trace Drop "IFQ" $self]
-		}
-		$arptable_ drop-target $drpT
-		if { $namfp != "" } {
-			$drpT namattach $namfp
-		}
-        }
-	#
-	# Link Layer
-	#
-	$ll arptable $arptable_
+	# #
+	# # Initialize ARP table only once.
+	# #
+	# if { $arptable_ == "" } {
+	# 	set arptable_ [new ARPTable $self $mac]
+	# 	# FOR backward compatibility sake, hack only
+	# 	if {$imepflag != ""} {
+	# 		set drpT [$self mobility-trace Drop "IFQ"]
+	# 	} else {
+	# 		set drpT [cmu-trace Drop "IFQ" $self]
+	# 	}
+	# 	$arptable_ drop-target $drpT
+	# 	if { $namfp != "" } {
+	# 		$drpT namattach $namfp
+	# 	}
+ #        }
+	# #
+	# # Link Layer
+	# #
+	# $ll arptable $arptable_
 	$ll mac $mac
 	$ll down-target $ifq
 
