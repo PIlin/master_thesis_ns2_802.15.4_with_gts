@@ -200,7 +200,7 @@ NOAH_Agent::recv (Packet * p, Handler *)
                 /*
                  * Add the IP Header
                  */
-                ch->size() += IP_HDR_LEN;    
+                // ch->size() += IP_HDR_LEN;    
                 iph->ttl_ = IP_DEF_TTL;
         }
         /*
