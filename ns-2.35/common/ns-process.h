@@ -87,6 +87,9 @@ enum AppDataType {
 	//Diffusion ADU
 	DIFFUSION_DATA,
 
+	// broadcast
+	BBCAST_DATA,
+
 	// Last ADU
 	ADU_LAST
 

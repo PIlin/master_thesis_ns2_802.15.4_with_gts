@@ -334,6 +334,7 @@ OBJ_CC = \
 	wpan/p802_15_4trace.o wpan/p802_15_4transac.o \
 	apps/pbc.o \
 	noah/noah.o \
+	broadcast/BroadcastbaseAgent.o broadcast/BroadcastbaseApp.o broadcast/bbcast-packet.o \
 	@V_STLOBJ@
 
 

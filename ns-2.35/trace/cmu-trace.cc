@@ -1456,6 +1456,9 @@ void CMUTrace::format(Packet* p, const char *why)
 		case PT_GAF:
 		case PT_PING:
 			break;
+		case PT_BROADCASTBASE:
+			format_msg(p, offset);
+			break;
 		default:
 
 			if(pktTrc_ && pktTrc_->format_unknow(p, offset, pt_, newtrace_))

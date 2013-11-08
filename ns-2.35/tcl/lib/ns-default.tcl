@@ -505,6 +505,11 @@ Application/SctpApp1 set numStreams_ 1
 Application/SctpApp1 set numUnreliable_ 0
 Application/SctpApp1 set reliability_ 0
 
+# broadcast app
+Application/BroadcastbaseApp set bmsg-interval_ 15
+Application/BroadcastbaseApp set bsize_ 100
+
+
 RandomVariable/Uniform set min_ 0.0
 RandomVariable/Uniform set max_ 1.0
 RandomVariable/Exponential set avg_ 1.0
@@ -1590,3 +1595,4 @@ Agent/PBC set modulationScheme 0
 
 Agent/MDART set macFailed_ true
 Agent/MDART set etxMetric_ true
+
