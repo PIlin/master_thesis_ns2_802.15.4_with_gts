@@ -408,7 +408,7 @@ fi
 blame='Tcl is not part of the ns project.  Please see www.Scriptics.com
 to see if they have a fix for your platform.'
 autoconf
-./configure --enable-gcc --disable-shared --prefix=$CUR_PATH || die "tcl$TCLVER configuration failed! Exiting ..."
+./configure --enable-symbols --enable-gcc --disable-shared --prefix=$CUR_PATH || die "tcl$TCLVER configuration failed! Exiting ..."
 if make 
 then 
 	echo "tcl$TCLVER make succeeded."
@@ -438,7 +438,7 @@ fi
 blame='Tk is not part of the ns project.  Please see www.Scriptics.com
 to see if they have a fix for your platform.'
 autoconf
-./configure --enable-gcc --disable-shared --disable-xft --disable-xss --prefix=$CUR_PATH || die "tk$TKVER configuration failed! Exiting ..."
+./configure --enable-symbols --enable-gcc --disable-shared --disable-xft --disable-xss --prefix=$CUR_PATH || die "tk$TKVER configuration failed! Exiting ..."
 if make 
 then
 	echo "tk$TKVER build succeeded."
@@ -487,7 +487,7 @@ if  [ "${test_cygwin}" = "true" ]; then
 		exit
 	fi
 else
-        ./configure --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "otcl-$OTCLVER configuration failed! Exiting ...";
+        ./configure --enable-debug  --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "otcl-$OTCLVER configuration failed! Exiting ...";
 
 	if make 
 	then
@@ -512,7 +512,7 @@ cd ./tclcl-$TCLCLVER
 if  [ "${test_cygwin}" = "true" ]; then
         ./configure --x-libraries=/usr/X11R6/lib --x-includes=/usr/X11R6/include --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "tclcl-$TCLCLVER configuration failed! Exiting ...";
 else
-        ./configure --with-otcl=../otcl-$OTCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "tclcl-$TCLCLVER configuration failed! Exiting ..."
+        ./configure --enable-debug --with-otcl=../otcl-$OTCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "tclcl-$TCLCLVER configuration failed! Exiting ..."
 fi
 
 if make
@@ -567,7 +567,10 @@ fi
 if  [ "${test_cygwin}" = "true" ]; then
         ./configure --x-libraries=/usr/X11R6/lib --x-includes=/usr/X11R6/include --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER || die "Ns configuration failed! Exiting ...";
 else
-        ./configure --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER  --with-tcldebug || die "Ns configuration failed! Exiting ...";
+
+        export CFLAGS="-Wno-unused-but-set-variable -Wno-narrowing"
+        export CXXFLAGS="$CFLAGS"
+        ./configure --enable-debug --with-otcl=../otcl-$OTCLVER --with-tclcl=../tclcl-$TCLCLVER --with-tcl-ver=$TCLVER --with-tk-ver=$TKVER  --with-tcldebug || die "Ns configuration failed! Exiting ...";
 fi
 
 if make
