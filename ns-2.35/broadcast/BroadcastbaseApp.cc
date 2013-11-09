@@ -67,8 +67,10 @@ BroadcastbaseApp::BroadcastbaseApp() :  cw_timer_(this,1,1,'c',1,1), cbr_timer_(
 {	running_=1;
 	bind("bmsg-interval_", &binterval); // interval for broadcast msg
 	bind("bsize_", &bsize); //size of broadcast msg
+	bind("propagate_", &propagate);
 	binterval=0;
 	rnd_time=0;
+	propagate = 1;
 	fmd=0; 	//current fmd
 	bmd=0; 	//current bmd
 	fmr=0; 	//current fmr
@@ -230,6 +232,9 @@ void BroadcastbaseApp::process_data_BroadcastMsg(char *pkt, hdr_ip* ih)
 	cout << "BroadcastMsg - RECEIVED - Node "<<((BroadcastbaseAgent*)agent_)->addr() << " from node "<<sender_id<<" pkt: "<<data->g_id()<<"\n";
 	fflush(stdout);
 	#endif
+
+	if (!propagate)
+		return;
 	
 	/* control and setting of message propagation direction */
 	if(data->g_dir()=='e'){ // I have received from source

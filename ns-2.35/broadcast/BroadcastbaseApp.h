@@ -102,6 +102,7 @@ class BroadcastbaseApp : public Application {
 		double binterval; //broadcast interval declared by user
 		double rnd_time; 
 		int bsize; // broadcast packet size declared by user
+		int propagate; // enable propagation (declared by user)
 		double fmd; 	//current fmd
 		double bmd; 	//current bmd
 		double fmr; 	//current fmr

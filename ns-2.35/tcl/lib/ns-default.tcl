@@ -508,6 +508,7 @@ Application/SctpApp1 set reliability_ 0
 # broadcast app
 Application/BroadcastbaseApp set bmsg-interval_ 15
 Application/BroadcastbaseApp set bsize_ 100
+Application/BroadcastbaseApp set propagate_ 1
 
 
 RandomVariable/Uniform set min_ 0.0
