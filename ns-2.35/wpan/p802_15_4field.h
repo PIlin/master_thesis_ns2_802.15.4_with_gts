@@ -263,6 +263,7 @@ struct GTSFields
 };
 
 // SeokMin : 사실 GTSFields 안에 GTSSpec이 있지만 이걸 이용해서 둘다 조작한다. 비콘에는 GTSFields가 쓰인다
+// SeokMin: true GTSFields GTSSpec in both operations, but it is using. Beacon is used by the GTSFields
 struct GTSSpec
 {
 	GTSFields fields;
