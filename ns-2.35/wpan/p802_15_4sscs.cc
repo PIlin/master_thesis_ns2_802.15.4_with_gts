@@ -439,6 +439,8 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
                 }
                 // If GTS descriptor's start slot is 0, it will be removed in BeaconTxHandler after copy GTS Spec to Beacon.
 
+                // TODO proper slot duration
+
                 if( nRequestedLength <= (7 - pGtsSpec->getAllocLength()) )
                 {
                         pGtsSpec->setSlotStart( pGtsSpec->count, aNumSuperframeSlots - pGtsSpec->getAllocLength()  - nRequestedLength );
@@ -458,7 +460,7 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
                         pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
                         pGtsSpec->setCount( pGtsSpec->count + 1 );
 #ifdef DEBUG_GTS
-                        printf("[GTS] allocation successful. \n");
+                        printf("[GTS] allocation failed. \n");
 #endif
                 }
                 else
@@ -484,6 +486,11 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
                 printf("[%d]DevAddress: %d, [%d]slotStart: %d  \n", i, pGtsSpec->fields.list[i].devAddr16, i, pGtsSpec->slotStart[i] );
         }
 #endif
+
+        // GTSSpec *pGtsSpec2 = &(mac->gtsSpec2);
+        // pGtsSpec2->fields = pGtsSpec->fields;
+        // pGtsSpec2->fields.list[0].devAddr16 = mac->mpib.macShortAddress;
+        // pGtsSpec2->parse();
         // Beacon will be updated with updated GTS Spec in beaconTxHandler()
 }
 
