@@ -2152,15 +2152,32 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 				// startPANCoord에서 null 로 채우도록 변경. permit도 거기서 하도록하였음.
 				// mpib.macGTSPermit = def_macGTSPermit;
 				// gtsSpec.setPermit(mpib.macGTSPermit);
+
+				// google translate
+				// GTS was having filled in the field is always null. Existing code: gtsSpec.fields.spec = 0; / / null fill to
+				// StartPANCoord to fill in a change to null. also to permit hayeoteum there.
 			
 				wph->MSDU_GTSFields = gtsSpec.fields;	// wph는 매번 보내는 beacon 프레임에 해당한다. 이걸 바꾸면 된다. gtsSpec.fields에는 GTSField, GTSSpec이 포함되어 있다.
 				gtsSpec.removeNullGTS();	// remove GTS descriptor(start slot 0) after send Beacon.  
+
+				// google translate
+				// wph send the beacon frame corresponds to time. This is changing. In gtsSpec.fields GTSField, GTSSpec are included.
+
 
 				/* TBD
 				* GTS 할당이 하나라도 되어 있으면 GTS 구간을 사용하는지 확인하기 위한 타이머 작동( CFP 시작지점에서 핸들러가 동작하는)
 				* 그 핸들러에서는 GTS 목록 개수와 같은 플래그 리스트를 가지고 GTS 구간 사용 안했음 플래그로 세팅한다
 				* phy 단에서 신호가 올라 왔는데 시간이 CFP 구간이면 해당 GTS 구간 사용 플래그를 사용했음으로 세팅한다.
 				*/
+
+				// google translate
+				/* TBD
+				* GTS GTS allocation if it is any use to ensure that the interval timer operation (CFP at the beginning of the handler to work)
+				* In the handler list, such as the number of GTS GTS section contains a list of flags used anhaeteum flag is set to
+				* Phy just picked up a signal from the GTS interval is the time interval used CFP flag is set to be using.
+				*/
+
+
 				// end
 
 				//--- populate the pending address list ---
