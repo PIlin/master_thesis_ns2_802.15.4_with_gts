@@ -3111,8 +3111,17 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							dGtsDuration = dOneSlotTime * nSlotNum;
 							dWtime = dGtsDuration + ( bcnTime / phy->getRate('s') );
 	
+							const double ifs = (ch->size() <= aMaxSIFSFrameSize) ?
+								aMinSIFSPeriod :
+								aMinLIFSPeriod;
+
+							const double ifsTime = ifs / phy->getRate('s');
+
+							// const double turnaroundTime = aTurnaroundTime / phy->getRate('s') / 2;
+							const double turnaroundTime = aTurnaroundTime / phy->getRate('s') ;
+
 							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + nSlotLen ) ) + ( bcnTime / phy->getRate('s') );
-							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + ( ( aTurnaroundTime / phy->getRate('s') ) / 2 );
+							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + turnaroundTime + ifsTime;
 							dRemainTime = dEndAllocatedSlotTime - CURRENT_TIME;
 							// TBD : if GTS transmission data size if bigger than allocated GTS size.
 							{
@@ -3120,7 +3129,10 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							}
 #ifdef DEBUG_gts
 							printf( "[GTS] Time , nSlotNum = %d , dOneSlotTime = %lf , dGtsDuration = %lf\n" , nSlotNum, dOneSlotTime, dGtsDuration);
-							printf( "[GTS] In gts Data request Packet Address = %p , dWtime = %lf , Current_time = %lf, dEndAllocatedSlotTime = %lf , dCurrentPacketTrxTime = %lf , dRemainTime = %lf \n" , msdu , dWtime , CURRENT_TIME , dEndAllocatedSlotTime , dCurrentPacketTrxTime , dRemainTime );
+							printf( "[GTS] In gts Data request Packet Address = %p , dWtime = %.12lf , Current_time = %.12lf, dEndAllocatedSlotTime = %.12lf , dCurrentPacketTrxTime = %.12lf , dRemainTime = %.12lf \n" , msdu , dWtime , CURRENT_TIME , dEndAllocatedSlotTime , dCurrentPacketTrxTime , dRemainTime );
+							printf("[GTS] this bcnTime = %.12lf, next = %.12lf\n", 
+								( bcnTime / phy->getRate('s') ), 
+								( bcnTime / phy->getRate('s') ) + dOneSlotTime * aNumSuperframeSlots);
 #endif
 							if( dWtime <= CURRENT_TIME && dRemainTime > dCurrentPacketTrxTime )
 							// if( dWtime == CURRENT_TIME )
