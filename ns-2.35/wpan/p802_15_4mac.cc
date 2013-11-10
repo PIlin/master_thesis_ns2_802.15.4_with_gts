@@ -3118,7 +3118,7 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							const double ifsTime = ifs / phy->getRate('s');
 
 							// const double turnaroundTime = aTurnaroundTime / phy->getRate('s') / 2;
-							const double turnaroundTime = aTurnaroundTime / phy->getRate('s') ;
+							const double turnaroundTime = aTurnaroundTime / phy->getRate('s');
 
 							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + nSlotLen ) ) + ( bcnTime / phy->getRate('s') );
 							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + turnaroundTime + ifsTime;
@@ -3211,6 +3211,12 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 								// return;
 							}
 							bIsAllocatedGtsSlot = true;
+
+							// packet has been delayed
+							// this hack will restore size to the state before constructMSDU
+							ch->size() = ch->size() - macHeaderLen(wph->MHR_FrmCtrl);
+
+
 							break;
 						}
 						else
