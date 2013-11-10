@@ -51,7 +51,9 @@
 
 #include <random.h>
 
-//#define DEBUG802_15_4
+#define DEBUG802_15_4
+#define DEBUG_GTS
+#define DEBUG_gts
 #define SHUTDOWN
 
 #define CURRENT_TIME    Scheduler::instance().clock()

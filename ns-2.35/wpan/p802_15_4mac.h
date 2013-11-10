@@ -45,9 +45,6 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define DEBUG802_15_4
-#define DEBUG_GTS
-
 #ifndef p802_15_4mac_h
 #define p802_15_4mac_h
 
