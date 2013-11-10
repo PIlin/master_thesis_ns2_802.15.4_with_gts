@@ -55,6 +55,7 @@
 #include "p802_15_4fail.h"
 #include "p802_15_4nam.h"
 
+
 bool Mac802_15_4::verbose = true;	//0x02=GTS; 0x04=Indirect; 0x00=Direct (only for 802.15.4-unaware upper layer app. packet)
 bool Mac802_15_4::ack4data = true;
 UINT_8 Mac802_15_4::callBack = 1;	//0=no call back; 1=call back for failures; 2=call back for failures and successes
@@ -1645,6 +1646,7 @@ void Mac802_15_4::recvBeacon(Packet *p)
 			if( nSlotNum == 0 )
 			{
 				// sscs->MCPS_DATA_confirm( wphGtsDelayPacket->msduHandle , m_INVALID_GTS ); 이건 데이터 전송 시 GTS 할당 못 받았을 때 보내는 거
+				//                                                                           this is not allocated for data transmission GTS're sending when you receive
 				// if failed
 				// sscs->MLME_GTS_confirm( , m_DENIED );
 				return;
@@ -3079,16 +3081,18 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 				// strcpy(taskP.taskFrFunc(task),"csmacaCallBack");
 				// csmacaBegin('d');
 
+				GTSSpec const& myGtsSpec = (isPANCoor) ? gtsSpec : gtsSpec2;
+
 				for( int i = 0 ; i < 7 ; i++ )
 				{
 #ifdef DEBUG_GTS
-					printf( "[GTS] when gts transmission requested. gtsSpec2.fields.list[ i ].devAddr16 %d , mpib.macShortAddress %d \n" , gtsSpec2.fields.list[ i ].devAddr16 , mpib.macShortAddress );
+					printf( "[GTS] when gts transmission requested. myGtsSpec.fields.list[ i ].devAddr16 %d , mpib.macShortAddress %d \n" , myGtsSpec.fields.list[ i ].devAddr16 , mpib.macShortAddress );
 #endif
-					if( gtsSpec2.fields.list[ i ].devAddr16 == mpib.macShortAddress )
+					if( myGtsSpec.fields.list[ i ].devAddr16 == mpib.macShortAddress )
 					{
-						double dOneSlotTime = (aBaseSlotDuration * (1 << macSuperframeOrder2)) / phy->getRate('s');
-						int nSlotNum =  gtsSpec2.slotStart[ i ];
-						// int nSlotNum =  4 >> ( gtsSpec2.fields.list[ i ].slotSpec );				
+						double dOneSlotTime = (aBaseSlotDuration * (1 << mpib.macSuperframeOrder)) / phy->getRate('s');
+						int nSlotNum =  myGtsSpec.slotStart[ i ];
+						// int nSlotNum =  4 >> ( myGtsSpec.fields.list[ i ].slotSpec );				
 						if( nSlotNum != 0 )
 						{
 							//Copy To Higher Version
@@ -3096,10 +3100,16 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							double dCurrentPacketTrxTime = 0;
 							double dRemainTime = 0;
 
+							double bcnTime = (isPANCoor) ?
+								mpib.macBeaconTxTime :
+								macBcnRxTime;
+
 							dGtsDuration = dOneSlotTime * nSlotNum;
-							dWtime = dGtsDuration + ( macBcnRxTime / phy->getRate('s') );
+							dWtime = dGtsDuration + ( bcnTime / phy->getRate('s') );
 	
-							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + 1 ) ) + ( macBcnRxTime / phy->getRate('s') );
+							// TODO gts can take more than 1 slot??
+
+							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + 1 ) ) + ( bcnTime / phy->getRate('s') );
 							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + ( ( aTurnaroundTime / phy->getRate('s') ) / 2 );
 							dRemainTime = dEndAllocatedSlotTime - CURRENT_TIME;
 							// TBD : if GTS transmission data size if bigger than allocated GTS size.
@@ -3108,7 +3118,7 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							}
 #ifdef DEBUG_gts
 							printf( "[GTS] Time , nSlotNum = %d , dOneSlotTime = %lf , dGtsDuration = %lf\n" , nSlotNum, dOneSlotTime, dGtsDuration);
-							printf( "[GTS] In gts Data request Packet Address = %08X , dWtime = %lf , Current_time = %lf, dEndAllocatedSlotTime = %lf , dCurrentPacketTrxTime = %lf , dRemainTime = %lf \n" , msdu , dWtime , CURRENT_TIME , dEndAllocatedSlotTime , dCurrentPacketTrxTime , dRemainTime );
+							printf( "[GTS] In gts Data request Packet Address = %p , dWtime = %lf , Current_time = %lf, dEndAllocatedSlotTime = %lf , dCurrentPacketTrxTime = %lf , dRemainTime = %lf \n" , msdu , dWtime , CURRENT_TIME , dEndAllocatedSlotTime , dCurrentPacketTrxTime , dRemainTime );
 #endif
 							if( dWtime <= CURRENT_TIME && dRemainTime > dCurrentPacketTrxTime )
 							// if( dWtime == CURRENT_TIME )
@@ -3147,12 +3157,45 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 #endif
 								return;
 							}
-							//else
-							//{
-							//	taskP.taskStatus(task) = false;
-							//	drop( msdu , "GTS" );
-							//	return;
-							//}
+							else if (dWtime > CURRENT_TIME)
+							{
+								// we have to wait until out GTS
+
+#ifdef DEBUG_GTS
+				printf( "[GTS] GTS Timer Start from mcps_data_request. dWtime = %lf current time = %lf , %p\n" , dWtime , CURRENT_TIME , GtsDelayPacket );
+#endif
+
+								GtsTxT->start(dWtime - CURRENT_TIME);
+							}
+							else
+							{
+								// re-schedule packet, wcich cannot be sent druing this CFP to the next superframe
+
+								// TODO will it work correctly in case of the last slot in the CFP? seems like it can 
+								// go to the after the next superframe
+
+								const double bcnTime = (isPANCoor) ?
+									mpib.macBeaconTxTime :
+									macBcnRxTime;
+
+								const double superframeDuration = dOneSlotTime * aNumSuperframeSlots;
+								double nextSuperframe = ( bcnTime / phy->getRate('s') ) + superframeDuration;
+								
+								nextSuperframe += dOneSlotTime; // just to be sure, that we have received beacon
+								// TODO: can beacon reception take more than one slot?
+
+
+								// reschedurle timer so it will call this mcps_data_request in the new superframe, 
+								// where we will recalculate correct beginning of the GTS
+								GtsTxT->start(nextSuperframe - CURRENT_TIME);
+
+								// TODO: do this processing at the correct place, which processes superframe start
+
+
+								// taskP.taskStatus(task) = false;
+								// drop( msdu , "GTS" );
+								// return;
+							}
 							bIsAllocatedGtsSlot = true;
 							break;
 						}
