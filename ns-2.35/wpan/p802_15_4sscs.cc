@@ -458,12 +458,13 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
                         pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
                         pGtsSpec->setCount( pGtsSpec->count + 1 );
 #ifdef DEBUG_GTS
-                        printf("[GTS] allocation failed. \n");
+                        printf("[GTS] allocation successful. \n");
 #endif
                 }
                 else
                 {
-                        // TBD : can't allocate GTS and can't notify failure.
+                    // TBD : can't allocate GTS and can't notify failure.
+            		printf( "[GTS] Cannot allocate GTS with len %d" , nRequestedLength);
                 }
         }
         else    // free GTS
@@ -602,6 +603,7 @@ void SSCS802_15_4::startPANCoord(bool isClusterTree,bool txBeacon,UINT_8 BO,UINT
 			mac->MLME_SET_request(macGTSPermit, &t_mpib);	// set GTS permit to mpib
 			mac->gtsSpec.fields.spec = 0;			// memset
 			mac->gtsSpec.setPermit(mac->mpib.macGTSPermit);	// gtsSpec은 비콘 만들어 보낼때 사용한다
+			                                                // is used to create and send a beacon gtsSpec
 			// end of added code for GTS 
 			if (txBeacon)
 			{
