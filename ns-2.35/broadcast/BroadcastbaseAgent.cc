@@ -43,7 +43,7 @@ void BroadcastbaseAgent::sendbroadcastmsg(int realsize,BBCastData *data, long in
 	Packet *pkt = allocpkt(realsize);
 	struct hdr_cmn *ch = HDR_CMN(pkt);
 	struct hdr_ip *ih = HDR_IP(pkt);
-	ch->ptype() = PT_BROADCASTBASE;
+	ch->ptype() = PT_CBR;
 	ch->next_hop_ = IP_BROADCAST;
 	ch->size() = realsize;
 	ih->saddr() = Agent::addr();
