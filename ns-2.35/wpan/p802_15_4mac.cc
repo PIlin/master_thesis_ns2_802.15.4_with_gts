@@ -1918,6 +1918,8 @@ void Mac802_15_4::recvData(Packet *p)
 
 bool Mac802_15_4::toParent(Packet *p)
 {
+	// checks, whether packet's destination is coordinator of this device
+
 	hdr_lrwpan* wph = HDR_LRWPAN(p);
 	FrameCtrl frmCtrl;
 
@@ -3090,11 +3092,13 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 #endif
 					if( myGtsSpec.fields.list[ i ].devAddr16 == mpib.macShortAddress )
 					{
-						double dOneSlotTime = (aBaseSlotDuration * (1 << mpib.macSuperframeOrder)) / phy->getRate('s');
-						int nSlotNum =  myGtsSpec.slotStart[ i ];
+						const double dOneSlotTime = (aBaseSlotDuration * (1 << mpib.macSuperframeOrder)) / phy->getRate('s');
+						const int nSlotNum =  myGtsSpec.slotStart[ i ];
 						// int nSlotNum =  4 >> ( myGtsSpec.fields.list[ i ].slotSpec );				
 						if( nSlotNum != 0 )
 						{
+							const int nSlotLen = myGtsSpec.length[i];
+
 							//Copy To Higher Version
 							double dEndAllocatedSlotTime = 0;
 							double dCurrentPacketTrxTime = 0;
@@ -3107,9 +3111,7 @@ void Mac802_15_4::mcps_data_request(UINT_8 SrcAddrMode,UINT_16 SrcPANId,IE3ADDR 
 							dGtsDuration = dOneSlotTime * nSlotNum;
 							dWtime = dGtsDuration + ( bcnTime / phy->getRate('s') );
 	
-							// TODO gts can take more than 1 slot??
-
-							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + 1 ) ) + ( bcnTime / phy->getRate('s') );
+							dEndAllocatedSlotTime = ( dOneSlotTime * ( nSlotNum + nSlotLen ) ) + ( bcnTime / phy->getRate('s') );
 							dCurrentPacketTrxTime = phy->trxTime( GtsDelayPacket ) + ( ( aTurnaroundTime / phy->getRate('s') ) / 2 );
 							dRemainTime = dEndAllocatedSlotTime - CURRENT_TIME;
 							// TBD : if GTS transmission data size if bigger than allocated GTS size.
