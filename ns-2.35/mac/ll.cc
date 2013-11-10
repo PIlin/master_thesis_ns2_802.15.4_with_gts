@@ -198,6 +198,12 @@ void LL::sendDown(Packet* p)
 			mac_->hdr_dst((char*) HDR_MAC(p), MAC_BROADCAST);
 			break;
 		}
+		else
+		{
+			// works only with 802.15.4
+			mac_->hdr_dst((char*) HDR_MAC(p), dst);
+			break;
+		}
 		/* Assuming arptable is present, send query */
 		if (arptable_) {
 			tx = arptable_->arpresolve(dst, p, this);
