@@ -2158,7 +2158,7 @@ void Mac802_15_4::beaconTxHandler(bool forTX)
 				// StartPANCoord to fill in a change to null. also to permit hayeoteum there.
 			
 				wph->MSDU_GTSFields = gtsSpec.fields;	// wph는 매번 보내는 beacon 프레임에 해당한다. 이걸 바꾸면 된다. gtsSpec.fields에는 GTSField, GTSSpec이 포함되어 있다.
-				gtsSpec.removeNullGTS();	// remove GTS descriptor(start slot 0) after send Beacon.  
+				// gtsSpec.removeNullGTS();	// remove GTS descriptor(start slot 0) after send Beacon.  
 
 				// google translate
 				// wph send the beacon frame corresponds to time. This is changing. In gtsSpec.fields GTSField, GTSSpec are included.
