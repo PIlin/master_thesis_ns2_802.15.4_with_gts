@@ -681,7 +681,7 @@ LL set avoidReordering_ false ;	#not used
 
 Snoop set debug_ false
 
-
+LL/LL802_15_4 set GTS_delivery_ 0
 
 #change wrt Mike's code
  # 802.11 MIB parameters

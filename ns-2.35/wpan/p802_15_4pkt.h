@@ -198,6 +198,9 @@ struct hdr_lrwpan
 	//---SSCS entity---
 	UINT_8		msduHandle;
 
+	//---LL layer---
+	bool		needGTS;
+
 	//---Other---
 	bool		setSN;		//SN already been set
 	UINT_8		phyCurrentChannel;

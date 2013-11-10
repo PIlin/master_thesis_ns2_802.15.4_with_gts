@@ -328,7 +328,9 @@ OBJ_CC = \
 	queue/delayer.o \
 	xcp/xcpq.o xcp/xcp.o xcp/xcp-end-sys.o \
 	wpan/p802_15_4csmaca.o wpan/p802_15_4fail.o \
-	wpan/p802_15_4hlist.o wpan/p802_15_4mac.o \
+	wpan/p802_15_4hlist.o \
+	wpan/p802_15_4ll.o \
+	wpan/p802_15_4mac.o \
 	wpan/p802_15_4nam.o wpan/p802_15_4phy.o \
 	wpan/p802_15_4sscs.o wpan/p802_15_4timer.o \
 	wpan/p802_15_4trace.o wpan/p802_15_4transac.o \

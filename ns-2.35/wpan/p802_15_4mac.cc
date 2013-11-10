@@ -1028,7 +1028,7 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 	hdr_cmn *ch = HDR_CMN(p);
 	bool noAck;
 	int i;
-	UINT_8 txop;
+	UINT_8 txop = 0;
 	FrameCtrl frmCtrl;
 	SuperframeSpec t_sfSpec;
 
@@ -1095,6 +1095,13 @@ void Mac802_15_4::recv(Packet *p, Handler *h)
 				// txop |= Mac802_15_4::txOption;
 			}
 			wph->msduHandle = 0;
+
+			// added by Pavlo Ilin for GTS
+
+			if (wph->needGTS)
+				txop |= TxOp_GTS;
+
+			// end by Pavlo Ilin
 
 			// added by DaeMyeong Park for GTS
 			if( ( txop & TxOp_GTS ) && ( (ch->ptype_ == PT_CBR) || (ch->ptype_==PT_FTP) ) )
