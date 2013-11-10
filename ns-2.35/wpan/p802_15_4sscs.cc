@@ -60,7 +60,8 @@
 #define assoRetryInterval	1.0
 
 //UINT_32 SSCS802_15_4::ScanChannels = 0x07ffffff;
-UINT_32 SSCS802_15_4::ScanChannels = 0x00003800;	//only scan the first 3 channels in 2.4G
+// UINT_32 SSCS802_15_4::ScanChannels = 0x00003800;	//only scan the first 3 channels in 2.4G
+UINT_32 SSCS802_15_4::ScanChannels = 0x00000800;	//only scan the first 3 channels in 2.4G
 
 void SSCS802_15_4Timer::start(double wtime)
 {
@@ -441,7 +442,23 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
 
                 // TODO proper slot duration
 
-                if( nRequestedLength <= (7 - pGtsSpec->getAllocLength()) )
+                bool canAlloc = true;
+
+                const int slotsLeft = aNumSuperframeSlots - (nRequestedLength + pGtsSpec->getAllocLength());
+                if (slotsLeft < 1) 
+                    canAlloc = false;
+
+                const int slotDuration = aBaseSlotDuration * (1 << mac->mpib.macSuperframeOrder);
+                if (slotsLeft * slotDuration <= aMinCAPLength)
+                    canAlloc = false;
+
+                if (pGtsSpec->count >= 7)
+                    canAlloc = false;
+
+
+
+                //if( nRequestedLength <= (7 - pGtsSpec->getAllocLength()) )
+                if (canAlloc)
                 {
                         pGtsSpec->setSlotStart( pGtsSpec->count, aNumSuperframeSlots - pGtsSpec->getAllocLength()  - nRequestedLength );
                         pGtsSpec->setLength( pGtsSpec->count, nRequestedLength );
@@ -452,17 +469,17 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
                         printf("[GTS] allocation Succeed. count: %d [%d]startslot: %d \n", pGtsSpec->count , pGtsSpec->count-1, pGtsSpec->slotStart[pGtsSpec->count-1] );
 #endif
                 }
-                else if( pGtsSpec->count < 7 )
-                {
-                        pGtsSpec->setLength( pGtsSpec->count, (7 - pGtsSpec->getAllocLength()) );     // supportable GTS length
-                        pGtsSpec->setRecvOnly( pGtsSpec->count, bForReceive );
-                        pGtsSpec->setSlotStart( pGtsSpec->count, 0 );       // set start slot to 0
-                        pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
-                        pGtsSpec->setCount( pGtsSpec->count + 1 );
-#ifdef DEBUG_GTS
-                        printf("[GTS] allocation failed. \n");
-#endif
-                }
+//                 else if( pGtsSpec->count < 7 )
+//                 {
+//                         pGtsSpec->setLength( pGtsSpec->count, (7 - pGtsSpec->getAllocLength()) );     // supportable GTS length
+//                         pGtsSpec->setRecvOnly( pGtsSpec->count, bForReceive );
+//                         pGtsSpec->setSlotStart( pGtsSpec->count, 0 );       // set start slot to 0
+//                         pGtsSpec->fields.list[ pGtsSpec->count ].devAddr16 = DevAddress;
+//                         pGtsSpec->setCount( pGtsSpec->count + 1 );
+// #ifdef DEBUG_GTS
+//                         printf("[GTS] allocation failed. \n");
+// #endif
+//                 }
                 else
                 {
                     // TBD : can't allocate GTS and can't notify failure.
