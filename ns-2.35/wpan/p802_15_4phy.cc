@@ -219,7 +219,7 @@ void Phy802_15_4::PD_DATA_request(UINT_8 psduLength,Packet *psdu)
 		if (tx_state == p_IDLE)
 		{
 #ifdef DEBUG802_15_4
-			fprintf(stdout,"[%s::%s][%f](node %d) sending pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
+			fprintf(stdout,"[%s::%s][%.12lf](node %d) sending pkt: type = %s, src = %d, dst = %d, uid = %d, mac_uid = %u, size = %d\n",__FILE__,__FUNCTION__,CURRENT_TIME,index_,wpan_pName(psdu),p802_15_4macSA(psdu),p802_15_4macDA(psdu),ch->uid(),HDR_LRWPAN(psdu)->uid,ch->size());
 #endif
 			//construct a PPDU packet (not really a new packet in simulation, but still <psdu>)
 			construct_PPDU(psduLength,psdu);
@@ -233,7 +233,7 @@ void Phy802_15_4::PD_DATA_request(UINT_8 psduLength,Packet *psdu)
 			tx_state = p_BUSY;		//for carrier sense
 #ifdef DEBUG_GTS
 			if( mac->txOption & TxOp_GTS )
-				printf( "[GTS] Current = %lf , trxTime %lf" , CURRENT_TIME , trx_time );
+				printf( "[GTS] Current = %.12lf , trxTime %.12lf" , CURRENT_TIME , trx_time );
 #endif
 			sendOverH.start(trx_time);
 		}
