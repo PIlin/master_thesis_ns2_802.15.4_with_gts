@@ -1047,6 +1047,20 @@ int SSCS802_15_4::command(int argc, const char*const* argv)
 		mac->phy->PLME_GET_request(phyCurrentChannel);
 		mac->MLME_START_request(mac->mpib.macPANId,mac->tmp_ppib.phyCurrentChannel,15,15,mac->isPANCoor,false,false,false);
 	}
+	else if (strcmp(argv[2], "MLME_GTS_request") == 0)
+	{
+		UINT_8 GTSCharacteristics = atoi(argv[3]);
+		bool security = false;
+		mac->MLME_GTS_request(GTSCharacteristics, security);
+	}
+	else if (strcmp(argv[2], "MLME_GTS_indication") == 0)
+	{
+		UINT_16 devAddr16 = atoi(argv[3]);
+		UINT_8 GTSCharacteristics = atoi(argv[4]);
+		bool security = false;
+		UINT_8 ACLEntry = 0;
+		this->MLME_GTS_indication(devAddr16, GTSCharacteristics, security, ACLEntry);
+	}
 	else
 	{
 		fprintf (stderr, "%s: unknown command %s\n", __FILE__, argv[2]);
