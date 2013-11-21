@@ -412,14 +412,18 @@ void SSCS802_15_4::MLME_GTS_indication(UINT_16 DevAddress,UINT_8 GTSCharacterist
 #ifdef DEBUG_GTS
         printf( "[GTS] In Gts_indication nRequestedLength = %d , DevAddress %d\n" , nRequestedLength , DevAddress );
 #endif
-        if( DevAddress >= 0xfffe )
-                return;
-        if( mac->mpib.macBeaconOrder == 15 )
-                return;
-        if( mac->mpib.macSuperframeOrder == 15 )
-                return;
-        if( mac->mpib.macGTSPermit == false )
-                return;
+        if( DevAddress >= 0xfffe ||
+        	mac->mpib.macBeaconOrder == 15 ||
+        	mac->mpib.macSuperframeOrder == 15 ||
+        	mac->mpib.macGTSPermit == false )
+        {
+        	sscsTaskP.taskStatus(sscsTP_setPAN_GTS) = true;
+        	sscsTaskP.setPAN_GTS_devAddr16 = DevAddress;
+        	sscsTaskP.setPAN_GTS_GTSCharacteristics = GTSCharacteristics;
+        	sscsTaskP.setPAN_GTS_security = SecurityUse;
+        	sscsTaskP.setPAN_GTS_ACLEntry = ACLEntry;
+            return;
+        }
 
         pGtsSpec->parse();
 
@@ -662,7 +666,17 @@ void SSCS802_15_4::startPANCoord(bool isClusterTree,bool txBeacon,UINT_8 BO,UINT
 		case 2:
 			sscsTaskP.taskStatus(sscsTP_startPANCoord) = false;
 			if (status == m_SUCCESS)
+			{
 				fprintf(stdout,"[%f](node %d) successfully started a new PAN (beacon enabled) [channel:%d] [PAN_ID:%d]\n",CURRENT_TIME,mac->index_,sscsTaskP.startPANCoord_Channel,mac->index_);
+
+				if (sscsTaskP.taskStatus(sscsTP_setPAN_GTS))
+				{
+					sscsTaskP.taskStatus(sscsTP_setPAN_GTS) = false;
+
+					MLME_GTS_indication(sscsTaskP.setPAN_GTS_devAddr16, sscsTaskP.setPAN_GTS_GTSCharacteristics,
+						sscsTaskP.setPAN_GTS_security, sscsTaskP.setPAN_GTS_ACLEntry);
+				}
+			}
 			else
 				fprintf(stdout,"<!>[%f](node %d) failed to transmit beacons -> %s [channel:%d] [PAN_ID:%d]\n",CURRENT_TIME,mac->index_,statusName(status),sscsTaskP.startPANCoord_Channel,mac->index_);
 			break;

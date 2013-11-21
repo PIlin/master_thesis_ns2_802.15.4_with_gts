@@ -63,6 +63,7 @@
 //task pending (callback)
 #define sscsTP_startPANCoord		1
 #define sscsTP_startDevice		2
+#define sscsTP_setPAN_GTS		3
 struct sscsTaskPending
 {
 	sscsTaskPending()
@@ -75,6 +76,7 @@ struct sscsTaskPending
 		startPANCoord_STEP = 0;
 		startDevice = false;
 		startDevice_STEP = 0;
+		setPAN_GTS = false;
 	}
 
 	bool &taskStatus(UINT_8 task)
@@ -85,6 +87,8 @@ struct sscsTaskPending
 				return startPANCoord;
 			case sscsTP_startDevice:
 				return startDevice;
+			case sscsTP_setPAN_GTS:
+				return setPAN_GTS;
 			default:
 				assert(0);
 				// shutup compiler.
@@ -127,6 +131,11 @@ struct sscsTaskPending
 	UINT_8	startDevice_Channel;
 	PAN_ELE	startDevice_panDes;
 	//----------------
+	bool setPAN_GTS;
+	UINT_16 setPAN_GTS_devAddr16;
+	UINT_8 setPAN_GTS_GTSCharacteristics;
+	bool setPAN_GTS_security;
+	UINT_8 setPAN_GTS_ACLEntry;
 };
 
 class SSCS802_15_4;
